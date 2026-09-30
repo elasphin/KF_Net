@@ -5,9 +5,12 @@
 
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on position, velocity and attitude (the
 post-processed truth has no IMU biases), averaged over the epochs plus
-gamma ||Theta||^2 (Eq. (32)); Adam with learning rate 0.01 (Table III); one
-Adam step per epoch (A15). The first 80 % of the training dataset trains the
-network, the last 20 % validates it (A21).
+gamma ||Theta||^2 (Eq. (32)); Adam with learning rate 0.01 (Table III).
+Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
+epoch the filter part theta (LSTM, attention, FC) is updated with the encoder
+psi (masked CNN) frozen, then psi is updated with theta frozen; one Adam step
+each (A15). The first 80 % of the training dataset trains the network, the
+last 20 % validates it (A21).
 """
 import json
 import time
@@ -24,6 +27,17 @@ from read_dataset import load_navigation_data
 CHECKPOINT_FILE = cfg.OUTPUT_FOLDER / 'masked_cla_network.pt'
 
 
+def training_step(network, optimizer, parameters, data, measurements, last):
+    """One pass over the training part that updates only 'parameters' (the others are frozen)."""
+    for p in network.parameters():
+        p.requires_grad_(any(p is q for q in parameters))
+    optimizer.zero_grad()
+    result = run_filter(data, measurements, network, 0, last, fault_detection=False, training=True)
+    (cfg.L2_WEIGHT * sum(torch.sum(p ** 2) for p in parameters)).backward()          # gamma ||Theta||^2, Eq. (32)
+    optimizer.step()
+    return result
+
+
 def main():
     torch.manual_seed(cfg.RANDOM_SEED)
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
@@ -38,13 +52,16 @@ def main():
     classical = run_filter(data, measurements, last=split, fault_detection=False)
     network = MaskedCLANetwork(max_measurements)
     network.gain_row_scale.copy_(torch.tensor(np.maximum(classical['gain_row_rms'], 1e-12)))
-    optimizer = torch.optim.Adam(network.parameters(), lr=cfg.LEARNING_RATE)
+    encoder = [network.conv.weight, network.conv_bias]                  # psi of Ref. [15]: masked CNN
+    filter_part = [p for p in network.parameters() if not any(p is q for q in encoder)]   # theta: LSTM, attention, FC
+    encoder_optimizer = torch.optim.Adam(encoder, lr=cfg.LEARNING_RATE)
+    filter_optimizer = torch.optim.Adam(filter_part, lr=cfg.LEARNING_RATE)
 
     info = {
         'dataset': data.name, 'training_samples': split, 'validation_samples': last - split,
         'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS,
         'early_stopping_patience': cfg.EARLY_STOPPING_PATIENCE, 'l2_weight': cfg.L2_WEIGHT,
-        'backprop_window': cfg.BACKPROP_WINDOW,
+        'backprop_window': cfg.BACKPROP_WINDOW, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
         'max_measurements': max_measurements, 'input_size': FIXED_FEATURE_SIZE + 2 * max_measurements,
         'network': f'Conv1D {cfg.CONV_FILTERS}x{cfg.CONV_KERNEL_SIZE} -> max-pool {cfg.POOL_KERNEL_SIZE} -> '
                    f'LSTM {cfg.LSTM_LAYERS}x{cfg.LSTM_UNITS} (dropout {cfg.LSTM_DROPOUT}) -> attention -> '
@@ -56,11 +73,8 @@ def main():
 
     history, best_loss, epochs_without_improvement = [], np.inf, 0
     for epoch in range(1, cfg.TRAINING_EPOCHS + 1):
-        optimizer.zero_grad()
-        train = run_filter(data, measurements, network, 0, split, fault_detection=False, training=True)
-        regularization = cfg.L2_WEIGHT * sum(torch.sum(p ** 2) for p in network.parameters())   # Eq. (32)
-        regularization.backward()
-        optimizer.step()
+        training_step(network, filter_optimizer, filter_part, data, measurements, split)   # theta, psi frozen
+        train = training_step(network, encoder_optimizer, encoder, data, measurements, split)  # psi, theta frozen
         validation = run_filter(data, measurements, network, split, last, fault_detection=False)
 
         history.append({'epoch': epoch, 'train_loss': train['loss'], 'validation_loss': validation['loss'],

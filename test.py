@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 import settings as cfg
+from earth_models import ecef_to_llh, ecef_to_ned_matrix
 from fault_detection import stanford_percentages
 from masked_cla_network import MaskedCLANetwork
 from navigation_filter import prepare_measurements, run_filter
@@ -44,13 +45,17 @@ def main():
 
     summary = {name: summarize(result) for name, result in results.items()}
     (cfg.OUTPUT_FOLDER / 'test_summary.json').write_text(json.dumps(summary, indent=2, default=float))
-    lines = ['method,time_gpst_s,north_error_m,east_error_m,down_error_m,horizontal_pl_m,vertical_pl_m,'
-             'measurement_count,faulty_satellite']
+    # Truth antenna trajectory in a local north/east frame at the start (paper Fig. 18(a)).
+    origin = data.truth_antenna_position[0]
+    truth_local = (data.truth_antenna_position[1:] - origin) @ ecef_to_ned_matrix(*ecef_to_llh(origin)[:2]).T
+    lines = ['method,time_gpst_s,truth_north_m,truth_east_m,north_error_m,east_error_m,down_error_m,'
+             'horizontal_pl_m,vertical_pl_m,measurement_count,faulty_satellite']
     for name, r in results.items():
         for i, t in enumerate(r['time']):
             n, e, d = r['ned_error'][i]
-            lines.append(f"{name},{t:.3f},{n:.4f},{e:.4f},{d:.4f},{r['horizontal_pl'][i]:.4f},"
-                         f"{r['vertical_pl'][i]:.4f},{r['measurement_count'][i]},{r['faulty_satellite'][i]}")
+            lines.append(f"{name},{t:.3f},{truth_local[i, 0]:.4f},{truth_local[i, 1]:.4f},{n:.4f},{e:.4f},{d:.4f},"
+                         f"{r['horizontal_pl'][i]:.4f},{r['vertical_pl'][i]:.4f},{r['measurement_count'][i]},"
+                         f"{r['faulty_satellite'][i]}")
     (cfg.OUTPUT_FOLDER / 'test_epochs.csv').write_text('\n'.join(lines) + '\n')
     for name, s in summary.items():
         print(f"{name:22s} RMSE N {s['rmse_north_m']:.2f}  E {s['rmse_east_m']:.2f}  D {s['rmse_down_m']:.2f}  "

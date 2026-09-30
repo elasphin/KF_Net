@@ -28,7 +28,7 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test |
 | `train.py` | Offline training with validation, Eq. (30)-(32) |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
-| `show_results.py` | One figure and table: train/validation loss per epoch, test errors (Fig. 18), Stanford diagrams (Fig. 20), error CDF (Fig. 19), data sizes, learning rate, network size and test metrics |
+| `show_results.py` | Figures and table as in the paper: train/validation loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size |
 
 ## Data
 
@@ -53,7 +53,7 @@ them, download the MGEX products of that day (e.g. from the IGS/BKG or CDDIS arc
 pip install -r requirements.txt
 python train.py         # outputs/masked_cla_network.pt (best validation model), training_history.json, training_info.json
 python test.py          # outputs/test_summary.json, test_epochs.csv
-python show_results.py  # outputs/results.png and a printed table
+python show_results.py  # outputs/results_training.png, results_errors.png, results_cdf.png, results_stanford.png, results_table.txt
 ```
 
 For a quick run set `MAX_FUSION_EPOCHS` (e.g. 300) and `TRAINING_EPOCHS` in `settings.py`.

@@ -6,9 +6,10 @@
   less than epsilon_T.
 - Pseudorange: Eq. (1) with ionosphere Eq. (2) and troposphere; satellite and
   receiver clocks are zero (A4).
-- MP/NLOS + receiver error eps: drawn from the real GPS/BDS-3 pseudorange
-  errors of the same dataset in the same elevation bin (Sec. III-A: "inject
-  the statistical characteristics of real data"), see A3.
+- MP/NLOS + receiver error eps and C/N0: one real GPS/BDS-3 observation of
+  the same dataset in the same elevation bin is drawn at random and its error
+  and C/N0 are both used, so the joint error / C/N0 / elevation statistics of
+  the real data are kept (Sec. III-A, Fig. 5), see A3.
 """
 import numpy as np
 
@@ -71,7 +72,7 @@ def elevation_bin(elevation, bin_count):
 
 
 def real_error_bins(data, gnss_epochs):
-    """Real GPS/BDS-3 pseudorange errors and median C/N0 per elevation bin.
+    """Real GPS/BDS-3 pseudorange errors and their C/N0, per elevation bin: [(errors, cn0), ...].
 
     error = pseudorange - Eq. (1) prediction at the truth antenna position; the
     receiver clock of each system is removed with the median of the epoch.
@@ -92,7 +93,7 @@ def real_error_bins(data, gnss_epochs):
                 cn0[b].append(c)
     filled = [b for b in range(bin_count) if errors[b]]
     nearest = [min(filled, key=lambda f: abs(f - b)) for b in range(bin_count)]
-    return [(np.array(errors[f]), float(np.median(cn0[f]))) for f in nearest]
+    return [(np.array(errors[f]), np.array(cn0[f])) for f in nearest]
 
 
 # --- Simulation --------------------------------------------------------------
@@ -109,11 +110,12 @@ def simulate_leo_measurements(data, error_bins, seed) -> list[EpochMeasurements]
         elevation, _ = elevation_azimuth(receiver, positions)
         visible = np.flatnonzero(elevation >= np.deg2rad(cfg.LEO_ELEVATION_MASK_DEG))
         bins = elevation_bin(elevation[visible], len(error_bins))
+        drawn = [rng.integers(len(error_bins[b][0])) for b in bins]          # one real observation per satellite
+        noise = np.array([error_bins[b][0][j] for b, j in zip(bins, drawn)])
+        cn0 = np.array([error_bins[b][1][j] for b, j in zip(bins, drawn)])
         n = len(visible)
-        meas = EpochMeasurements(sat_ids[visible], np.full(n, 'L'), np.zeros(n), positions[visible], np.zeros(n),
-                                 np.array([error_bins[b][1] for b in bins]))
+        meas = EpochMeasurements(sat_ids[visible], np.full(n, 'L'), np.zeros(n), positions[visible], np.zeros(n), cn0)
         predicted, _, _, _ = predict_pseudoranges(receiver, meas, time, data.klobuchar_alpha, data.klobuchar_beta)
-        noise = np.array([rng.choice(error_bins[b][0]) for b in bins])
         meas.pseudoranges = predicted + noise
         epochs.append(meas)
     return epochs

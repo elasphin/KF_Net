@@ -1,9 +1,14 @@
-# Dataset directory
+# Dataset folder
 
-Download SmartPNT-MSF from:
+Not needed on Kaggle or when the automatic download is used (see the main README).
 
-https://gitee.com/lv-jiarui/SmartPNT-MSF-Datasets
+For a local copy, place the SmartPNT-POS folders here (any depth), for example:
 
-Place Data01, Data02 and IMUErrorModel.txt in this directory.
+```
+Dataset/
+├── Data01_20230102_ISA-100C_Vehicle_Complex/
+├── Data02_20220309_ISA-100C_Vehicle_Complex/
+└── products/          # *.sp3, *.clk, brdm* of both days, if not inside the data folders
+```
 
-The SmartPNT dataset is not redistributed with this repository.
+Source: https://www.kaggle.com/datasets/fengzhusgg/smartpnt-pos (not redistributed here).

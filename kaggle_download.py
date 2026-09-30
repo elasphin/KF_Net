@@ -9,7 +9,6 @@ Search order:
 """
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
-import xml.etree.ElementTree as ET
 
 import settings as cfg
 
@@ -48,6 +47,7 @@ def list_kaggle_files() -> list[str]:
 
 def download_dataset_folder(folder_name: str) -> Path:
     import kagglehub
+    from read_dataset import read_rover_info
 
     files = [n for n in list_kaggle_files() if folder_name in PurePosixPath(n).parts]
     if not files:
@@ -60,14 +60,7 @@ def download_dataset_folder(folder_name: str) -> Path:
     readme = download([n for n in files if PurePosixPath(n).name == 'README.xml'])
     if not readme:
         raise FileNotFoundError(f'README.xml is missing in {folder_name} on Kaggle')
-    imu_type = read_imu_type(readme[0])
+    imu_type = read_rover_info(readme[0])[0]
     patterns = [p.format(imu=imu_type) for p in NEEDED_FILE_PATTERNS]
     download([n for n in files if any(fnmatch(PurePosixPath(n).name, p) for p in patterns)])
     return readme[0].parent
-
-
-def read_imu_type(readme_path: Path) -> str:
-    for rover in ET.parse(readme_path).getroot().iter('ROVE'):
-        if (rover.findtext('ID') or '').strip() == '01':
-            return (rover.findtext('SINS_IMUType') or '').strip()
-    raise ValueError(f'{readme_path} has no rover with ID 01')

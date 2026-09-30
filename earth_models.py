@@ -69,12 +69,6 @@ def rotation_matrix_to_vector(R):
     return (0.5 if sin_angle < 1e-9 else angle / (2.0 * sin_angle)) * vee
 
 
-def rotation_about_z(angle):
-    """Frame rotation R3(angle): coordinates of a vector in a frame rotated by +angle about z."""
-    c, s = math.cos(angle), math.sin(angle)
-    return np.array([[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]])
-
-
 # --- Frames ------------------------------------------------------------------
 def ecef_to_llh(position):
     """ECEF [..., 3] -> latitude [rad], longitude [rad], height [m] (WGS84)."""

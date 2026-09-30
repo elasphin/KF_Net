@@ -54,9 +54,9 @@ def predict_pseudoranges(antenna, meas: EpochMeasurements, time, alpha, beta):
     Returns predicted pseudorange, unit line of sight (satellite -> antenna),
     elevation [rad] and the Eq. (3) variance [m^2].
     """
-    difference = antenna - meas.satellite_positions
-    distance = np.linalg.norm(difference, axis=1)
     sat = meas.satellite_positions
+    difference = antenna - sat
+    distance = np.linalg.norm(difference, axis=1)
     sagnac = EARTH_ROTATION_RATE * (sat[:, 0] * antenna[1] - sat[:, 1] * antenna[0]) / SPEED_OF_LIGHT
     elevation, azimuth = elevation_azimuth(antenna, sat)
     latitude, longitude, height = ecef_to_llh(antenna)
@@ -109,11 +109,9 @@ def satellite_position_and_clock(orbits, clocks, sat_id, transmit_times):
 
 def prepare_gnss_measurements(data) -> list[EpochMeasurements]:
     """Satellite position and clock at the transmit time of every GPS/BDS-3 observation."""
-    rows = [(k, sat, pr, cn0) for k, obs in enumerate(data.gnss_observations) for sat, pr, cn0 in obs]
-    epoch = np.array([r[0] for r in rows])
-    sat_ids = np.array([r[1] for r in rows])
-    pseudoranges = np.array([r[2] for r in rows])
-    cn0 = np.array([r[3] for r in rows])
+    rows = [(k, *observation) for k, epoch_obs in enumerate(data.gnss_observations) for observation in epoch_obs]
+    epoch, sat_ids, pseudoranges, cn0 = (np.array(column) for column in zip(*rows))
+    epoch, pseudoranges, cn0 = epoch.astype(int), pseudoranges.astype(float), cn0.astype(float)
     positions, clocks = np.full((len(rows), 3), np.nan), np.full(len(rows), np.nan)
     for sat in np.unique(sat_ids):
         if sat not in data.orbits or sat not in data.clocks:

@@ -27,12 +27,6 @@ class NavigationState:
     gyro_bias: np.ndarray       # [rad/s]
 
 
-def initial_state(data, k=0) -> NavigationState:
-    """Truth at fusion epoch k, zero biases (ASSUMPTIONS.md A7)."""
-    return NavigationState(data.truth_position[k].copy(), data.truth_velocity[k].copy(),
-                           data.truth_attitude[k].copy(), np.zeros(3), np.zeros(3))
-
-
 def initial_covariance():
     return np.diag(np.concatenate([np.full(3, cfg.INITIAL_POSITION_STD), np.full(3, cfg.INITIAL_VELOCITY_STD),
                                    np.full(3, cfg.INITIAL_ATTITUDE_STD), np.full(3, cfg.ACCEL_BIAS_INSTABILITY),
@@ -170,6 +164,9 @@ def state_difference(a: NavigationState, b: NavigationState):
 
 
 def truth_state(data, k) -> NavigationState:
-    """Post-processed truth at fusion epoch k (biases unknown -> zero, not used in the loss)."""
+    """Post-processed truth at fusion epoch k, zero biases (the truth has no biases; A7).
+
+    Used as the initial state and as the label of the loss (p, v, theta only).
+    """
     return NavigationState(data.truth_position[k], data.truth_velocity[k], data.truth_attitude[k],
                            np.zeros(3), np.zeros(3))

@@ -25,10 +25,10 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
 | `masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
 | `fault_detection.py` | Fault detection Eq. (33), identification, DIA Eq. (34), protection levels |
-| `navigation_filter.py` | Online filter of Fig. 2 (network gain or traditional EKF gain) |
-| `train.py` | Offline training, Eq. (30)-(32) |
-| `test.py` | Online test: RMSE (Table IV) and Stanford diagrams (Fig. 20) |
-| `show_results.py` | One figure and table: train/validation loss per epoch, test error CDF, data sizes, learning rate, network size and test metrics |
+| `navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test |
+| `train.py` | Offline training with validation, Eq. (30)-(32) |
+| `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
+| `show_results.py` | One figure and table: train/validation loss per epoch, test errors (Fig. 18), Stanford diagrams (Fig. 20), error CDF (Fig. 19), data sizes, learning rate, network size and test metrics |
 
 ## Data
 
@@ -52,7 +52,7 @@ them, download the MGEX products of that day (e.g. from the IGS/BKG or CDDIS arc
 ```bash
 pip install -r requirements.txt
 python train.py         # outputs/masked_cla_network.pt (best validation model), training_history.json, training_info.json
-python test.py          # outputs/test_summary.json, test_epochs.csv, test_position_error.png, test_stanford.png
+python test.py          # outputs/test_summary.json, test_epochs.csv
 python show_results.py  # outputs/results.png and a printed table
 ```
 

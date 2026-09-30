@@ -66,6 +66,10 @@ def transmit_positions(elements, reception_time, start_time, receiver):
 
 
 # --- Error model from real data ----------------------------------------------
+def elevation_bin(elevation, bin_count):
+    return np.minimum((np.rad2deg(elevation) // cfg.LEO_ELEVATION_BIN_DEG).astype(int), bin_count - 1)
+
+
 def real_error_bins(data, gnss_epochs):
     """Real GPS/BDS-3 pseudorange errors and median C/N0 per elevation bin.
 
@@ -82,8 +86,8 @@ def real_error_bins(data, gnss_epochs):
             rows = np.flatnonzero((meas.systems == system) & (elevation > 0.0))
             if len(rows) < 2:
                 continue
-            bins = np.minimum((np.rad2deg(elevation[rows]) // cfg.LEO_ELEVATION_BIN_DEG).astype(int), bin_count - 1)
-            for b, e, c in zip(bins, error[rows] - np.median(error[rows]), meas.cn0[rows]):
+            for b, e, c in zip(elevation_bin(elevation[rows], bin_count), error[rows] - np.median(error[rows]),
+                               meas.cn0[rows]):
                 errors[b].append(e)
                 cn0[b].append(c)
     filled = [b for b in range(bin_count) if errors[b]]
@@ -104,8 +108,7 @@ def simulate_leo_measurements(data, error_bins, seed) -> list[EpochMeasurements]
         positions = transmit_positions(elements, time, start_time, receiver)
         elevation, _ = elevation_azimuth(receiver, positions)
         visible = np.flatnonzero(elevation >= np.deg2rad(cfg.LEO_ELEVATION_MASK_DEG))
-        bins = np.minimum((np.rad2deg(elevation[visible]) // cfg.LEO_ELEVATION_BIN_DEG).astype(int),
-                          len(error_bins) - 1)
+        bins = elevation_bin(elevation[visible], len(error_bins))
         n = len(visible)
         meas = EpochMeasurements(sat_ids[visible], np.full(n, 'L'), np.zeros(n), positions[visible], np.zeros(n),
                                  np.array([error_bins[b][1] for b in bins]))

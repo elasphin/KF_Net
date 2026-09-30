@@ -24,12 +24,12 @@
 | Eq. (26)-(29) attention ماسک‌دار | `MaskedCLANetwork.forward` |
 | FC ماسک‌دار: ستون‌های j ≥ N_k بهره صفر | `MaskedCLANetwork.forward` |
 | Table III: Conv1D ۲۴ فیلتر، کرنل ۳، stride ۱، ReLU؛ LSTM ۶۴ واحد، ۵ لایه، dropout ۰٫۲؛ MSE؛ Adam؛ lr = 0.01 | `settings.py`, `masked_cla_network.py`, `train.py` |
-| Eq. (30), (32) تابع هزینه با داده‌ی مرجع پس‌پردازش + γ‖Θ‖² | `train.training_pass`, `train.main` |
+| Eq. (30), (32) تابع هزینه با داده‌ی مرجع پس‌پردازش + γ‖Θ‖² | `navigation_filter.run_filter`, `train.main` |
 | Sec. II-D: FDE روی نوآوری پیش‌بینی INS، قبل از اعمال بهره‌ی شبکه | `navigation_filter.run_filter` |
 | Eq. (33) آزمون کای‌دو با Q = HPHᵀ + R و α = 10⁻³ ([33]) | `fault_detection.detect_fault` |
 | شناسایی خطا با آماره‌ی T_i مرجع [33] | `fault_detection.identify_fault` |
 | Eq. (34) تطبیق DIA: x_i = x₀ − L_i ν و P_i = P₀ + L_i Q L_iᵀ ([33] Eq. 39) | `fault_detection.adapt_to_fault` |
-| Table IV (RMSE شمال/شرق/پایین/سه‌بعدی) و Fig. 20 (نمودار Stanford با AL = 30 m) | `test.summarize`, `test.save_plots` |
+| Table IV (RMSE شمال/شرق/پایین/سه‌بعدی) و Fig. 20 (نمودار Stanford با AL = 30 m) | `test.summarize`, `show_results.py` |
 | مقایسه با KF سنتی (Sec. II-E) | `test.py` (`traditional_ekf`) |
 
 ## ۲. فرض‌های کد قبلی که حذف شدند (در مقاله نبودند)

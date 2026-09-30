@@ -1,7 +1,5 @@
 Dataset/*
 !Dataset/README.md
-
-leo_cache/
 outputs/
 __pycache__/
 *.pyc

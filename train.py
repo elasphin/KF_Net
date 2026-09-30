@@ -9,8 +9,8 @@ gamma ||Theta||^2 (Eq. (32)); Adam with learning rate 0.01 (Table III).
 Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
 epoch the filter part theta (LSTM, attention, FC) is updated with the encoder
 psi (masked CNN) frozen, then psi is updated with theta frozen; one Adam step
-each (A15). The first 80 % of the training dataset trains the network, the
-last 20 % validates it (A21).
+each (A15), gradient norm clipped to 1 (A22). The first 80 % of the training
+dataset trains the network, the last 20 % validates it (A21).
 """
 import json
 import time
@@ -34,6 +34,7 @@ def training_step(network, optimizer, parameters, data, measurements, last):
     optimizer.zero_grad()
     result = run_filter(data, measurements, network, 0, last, fault_detection=False, training=True)
     (cfg.L2_WEIGHT * sum(torch.sum(p ** 2) for p in parameters)).backward()          # gamma ||Theta||^2, Eq. (32)
+    torch.nn.utils.clip_grad_norm_(parameters, cfg.GRADIENT_CLIP_NORM)                # A22
     optimizer.step()
     return result
 
@@ -61,7 +62,7 @@ def main():
         'dataset': data.name, 'training_samples': split, 'validation_samples': last - split,
         'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS,
         'early_stopping_patience': cfg.EARLY_STOPPING_PATIENCE, 'l2_weight': cfg.L2_WEIGHT,
-        'backprop_window': cfg.BACKPROP_WINDOW, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
+        'backprop_window': cfg.BACKPROP_WINDOW, 'gradient_clip_norm': cfg.GRADIENT_CLIP_NORM, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
         'max_measurements': max_measurements, 'input_size': FIXED_FEATURE_SIZE + 2 * max_measurements,
         'network': f'Conv1D {cfg.CONV_FILTERS}x{cfg.CONV_KERNEL_SIZE} -> max-pool {cfg.POOL_KERNEL_SIZE} -> '
                    f'LSTM {cfg.LSTM_LAYERS}x{cfg.LSTM_UNITS} (dropout {cfg.LSTM_DROPOUT}) -> attention -> '

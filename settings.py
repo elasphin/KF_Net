@@ -77,6 +77,7 @@ L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                          
 BACKPROP_WINDOW = 10               # fusion epochs per truncated back-propagation [choice A15]
 VALIDATION_FRACTION = 0.2          # last 20 % of the training dataset            [choice A21]
 EARLY_STOPPING_PATIENCE = 50       # epochs without a better validation loss      [choice A21]
+GRADIENT_CLIP_NORM = 1.0           # max gradient norm before each Adam step      [choice A22]
 
 # --- Fault detection and integrity (paper Sec. II-D, Fig. 20) ----------------
 FALSE_ALARM_PROBABILITY = 1e-3     # alpha of the chi-square test                 [ref 33]

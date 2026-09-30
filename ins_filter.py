@@ -27,10 +27,10 @@ class NavigationState:
     gyro_bias: np.ndarray       # [rad/s]
 
 
-def initial_state(data) -> NavigationState:
-    """Truth at the first fusion epoch, zero biases (ASSUMPTIONS.md A7)."""
-    return NavigationState(data.truth_position[0].copy(), data.truth_velocity[0].copy(),
-                           data.truth_attitude[0].copy(), np.zeros(3), np.zeros(3))
+def initial_state(data, k=0) -> NavigationState:
+    """Truth at fusion epoch k, zero biases (ASSUMPTIONS.md A7)."""
+    return NavigationState(data.truth_position[k].copy(), data.truth_velocity[k].copy(),
+                           data.truth_attitude[k].copy(), np.zeros(3), np.zeros(3))
 
 
 def initial_covariance():

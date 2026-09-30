@@ -23,9 +23,9 @@ def prepare_measurements(data, split):
     return [merge_measurements(g, l) for g, l in zip(gnss, leo)]
 
 
-def first_epoch_features(data, state):
-    """Network input quantities before the first update (zero differences)."""
-    i = np.searchsorted(data.imu_times, data.fusion_times[0], side='right')
+def first_epoch_features(data, state, k=0):
+    """Network input quantities before the first update at epoch k + 1 (zero differences)."""
+    i = np.searchsorted(data.imu_times, data.fusion_times[k], side='right')
     return {'accel': data.accel[i], 'gyro': data.gyro[i], 'state': state, 'residuals': {},
             'state_residual': np.zeros(STATE_SIZE), 'state_innovation': np.zeros(STATE_SIZE)}
 
@@ -40,15 +40,15 @@ def next_epoch_features(data, k, previous, new_state, model, dx, accel, gyro):
             'state_innovation': dx}                                                   # Eq. (12)
 
 
-def run_filter(data, measurements, network=None, use_fault_detection=True):
-    """Run the filter over all fusion epochs. network=None gives the traditional EKF."""
+def run_filter(data, measurements, network=None, use_fault_detection=True, last=None):
+    """Run the filter over fusion epochs 0..last (default: all). network=None gives the traditional EKF."""
     state, P = initial_state(data), initial_covariance()
     previous = first_epoch_features(data, state)
     hidden = None
     max_count = None if network is None else network.max_measurements
     times = data.fusion_times
     rows, gain_square_sum, gain_columns = [], np.zeros(STATE_SIZE), 0
-    for k in range(1, len(times)):
+    for k in range(1, len(times) if last is None else last + 1):
         state, mean_force, accel, gyro = propagate_ins(state, data, times[k - 1], times[k])
         Phi, Qd = transition_matrix(error_matrix(state, mean_force), times[k] - times[k - 1])
         P = Phi @ P @ Phi.T + Qd

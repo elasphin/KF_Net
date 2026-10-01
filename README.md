@@ -29,6 +29,7 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
 | `train.py` | Offline training with validation, Eq. (30)-(32) |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
+| `check_dataset.py` | Checks of the real dataset reading against the truth (IMR header, truth columns, lever arm, 1-s INS with IMU time offsets, free INS, pseudorange residuals) and the free-INS / EKF GNSS / EKF GNSS+LEO / network baselines on the training and validation parts |
 | `show_results.py` | Figures and table as in the paper: train/validation loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size |
 
 ## Data
@@ -68,6 +69,7 @@ pip install -r requirements.txt
 python train.py         # outputs/masked_cla_network.pt (best validation model), training_history.json, training_info.json,
                         #         leo_orbit_error_train.json (orbit error of the training LEO orbit, used in R)
 python test.py          # outputs/test_summary.json, test_epochs.csv, leo_orbit_error_test.json (one entry per LEO orbit)
+python check_dataset.py # optional: dataset reading checks and baselines (python check_dataset.py test for Data02)
 python show_results.py  # outputs/results_training.png, results_orbits.png, results_table.txt and, per LEO orbit,
                         #         results_errors_<orbit>.png, results_cdf_<orbit>.png, results_stanford_<orbit>.png
 ```

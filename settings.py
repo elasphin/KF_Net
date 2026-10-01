@@ -12,13 +12,14 @@ from pathlib import Path
 
 import numpy as np
 
+from dataset_path import DATASET_FOLDER
+
 PROJECT_FOLDER = Path(__file__).resolve().parent
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
 KAGGLE_DATASET = 'fengzhusgg/smartpnt-pos'                      # [paper Sec. III]
-KAGGLE_INPUT_FOLDER = Path('/kaggle/input/smartpnt-pos')       # used when running on Kaggle
-LOCAL_DATA_FOLDER = PROJECT_FOLDER / 'Dataset'                  # used when the data is copied here
-PRODUCTS_FOLDER = LOCAL_DATA_FOLDER / 'products'                # SP3, CLK and brdm files if not in the data folder
+# DATASET_FOLDER (dataset_path.py): Google Drive in Colab, /kaggle/input on Kaggle, ./Dataset on my computer
+PRODUCTS_FOLDER = DATASET_FOLDER / 'products'                   # SP3, CLK and brdm files if not in the data folder
 TRAIN_FOLDER_NAME = 'Data01_20230102_ISA-100C_Vehicle_Complex'  # training set (~150 min, Table I)
 TEST_FOLDER_NAME = 'Data02_20220309_ISA-100C_Vehicle_Complex'   # testing set (~110 min, Table I)
 MAX_FUSION_EPOCHS = None           # None = whole dataset; e.g. 300 for a quick run

@@ -1,10 +1,10 @@
 """Find a SmartPNT-POS dataset folder, or download it from Kaggle.
 
 Search order:
-  1. Kaggle notebook with the dataset attached: files are read directly from
-     /kaggle/input/smartpnt-pos (no download).
-  2. A copy under ./Dataset (any depth).
-  3. Download only the files this project needs with kagglehub. This needs a
+  1. settings.DATASET_FOLDER (any depth), set in dataset_path.py: the Google
+     Drive folder in Colab, /kaggle/input/smartpnt-pos on Kaggle (no download),
+     ./Dataset on my computer.
+  2. Download only the files this project needs with kagglehub. This needs a
      Kaggle API token (~/.kaggle/kaggle.json or KAGGLE_USERNAME / KAGGLE_KEY).
 """
 from fnmatch import fnmatch
@@ -18,11 +18,10 @@ NEEDED_FILE_PATTERNS = ('README.xml', 'ROVE*GroundTruth.txt', 'Rove*GroundTruth.
 
 
 def find_dataset_folder(folder_name: str) -> Path:
-    for root in (cfg.KAGGLE_INPUT_FOLDER, cfg.LOCAL_DATA_FOLDER):
-        if root.is_dir():
-            matches = sorted(p for p in root.rglob(folder_name) if p.is_dir())
-            if matches:
-                return matches[0]
+    if cfg.DATASET_FOLDER.is_dir():
+        matches = sorted(p for p in cfg.DATASET_FOLDER.rglob(folder_name) if p.is_dir())
+        if matches:
+            return matches[0]
     return download_dataset_folder(folder_name)
 
 

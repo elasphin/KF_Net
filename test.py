@@ -41,7 +41,7 @@ def main():
     data = load_navigation_data('test')
     measurements = prepare_measurements(data, 'test')
     results = {'masked_cla_kalmannet': run_filter(data, measurements, network),
-               'traditional_ekf': run_filter(data, measurements)}
+               'traditional_ekf': run_filter(data, measurements, max_measurements=network.max_measurements)}
 
     summary = {name: summarize(result) for name, result in results.items()}
     (cfg.OUTPUT_FOLDER / 'test_summary.json').write_text(json.dumps(summary, indent=2, default=float))

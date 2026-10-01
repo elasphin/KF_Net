@@ -26,11 +26,12 @@ def prepare_measurements(data, split):
     return [merge_measurements(g, l) for g, l in zip(gnss, leo)]
 
 
-def run_filter(data, measurements, network=None, first=0, last=None, fault_detection=True, training=False):
+def run_filter(data, measurements, network=None, first=0, last=None, fault_detection=True, training=False,
+               max_measurements=None):
     """Filter over fusion epochs first..last, starting from the truth at 'first' (A7).
 
-    network=None: traditional EKF gain. training=True: accumulates the gradient of
-    the Eq. (32) loss. The gradient of a correction dx_k also reaches later epochs
+    network=None: traditional EKF gain, with at most max_measurements rows (A16).
+    training=True: accumulates the gradient of the Eq. (32) loss. The gradient of a correction dx_k also reaches later epochs
     through the linear error propagation Phi (a correction at k shifts the prior
     at k+1 by Phi dx_k), truncated every BACKPROP_WINDOW epochs (A15).
     """
@@ -51,7 +52,7 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
         P = Phi @ P @ Phi.T + Qd
         link = torch.from_numpy(Phi) @ link
         model = measurement_model(state, measurements[k], data.lever_arm, times[k], data.klobuchar_alpha,
-                                  data.klobuchar_beta, None if network is None else network.max_measurements)
+                                  data.klobuchar_beta, max_measurements if network is None else network.max_measurements)
         dx, faulty_satellite, count = np.zeros(STATE_SIZE), '', 0
         if model is not None:
             nu, H, R = model.innovation, model.H, model.R
@@ -65,9 +66,9 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
                 with torch.set_grad_enabled(training):
                     gain, hidden = network(torch.tensor(features, dtype=torch.float32), length, count, hidden)
                     dx_tensor = gain[:, :count].double() @ torch.from_numpy(nu)
-                    prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:9])
-                    error = prior_error - (link - link.detach())[:9] - dx_tensor[:9]   # x_k - (x_k,k-1 + K dy_k)
-                    loss = error @ error / (last - first)                           # Eq. (30), mean of Eq. (32)
+                    prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:3])
+                    error = prior_error - (link - link.detach())[:3] - dx_tensor[:3]   # p_k - (p_k,k-1 + K dy_k)
+                    loss = error @ error / (error.numel() * (last - first))   # MSE of Eq. (30), Table III
                     window_loss = window_loss + loss
                     link = link + dx_tensor
                 loss_sum += loss.item()

@@ -48,6 +48,18 @@ def merge_measurements(a: EpochMeasurements, b: EpochMeasurements) -> EpochMeasu
 
 
 # --- Predicted pseudorange ---------------------------------------------------
+def ionosphere_scale(meas: EpochMeasurements):
+    """Klobuchar scale per row: frequency (f_L1 / f)^2 and, for LEO, paper Eq. (2)."""
+    frequency = np.array([FREQUENCY[s] for s in meas.systems])
+    scale = (GPS_L1_FREQUENCY / frequency) ** 2
+    is_leo = meas.systems == 'L'
+    if np.any(is_leo):                                  # paper Eq. (2): LEO inside the ionosphere
+        satellite_height = ecef_to_llh(meas.satellite_positions[is_leo])[2]
+        scale[is_leo] *= np.clip((satellite_height - cfg.IONO_LOWER_HEIGHT)
+                                 / (cfg.IONO_UPPER_HEIGHT - cfg.IONO_LOWER_HEIGHT), 0.0, 1.0)
+    return scale
+
+
 def predict_pseudoranges(antenna, meas: EpochMeasurements, time, alpha, beta):
     """Eq. (1) without the receiver clock at the given antenna position.
 
@@ -61,14 +73,8 @@ def predict_pseudoranges(antenna, meas: EpochMeasurements, time, alpha, beta):
     elevation, azimuth = elevation_azimuth(antenna, sat)
     latitude, longitude, height = ecef_to_llh(antenna)
 
-    frequency = np.array([FREQUENCY[s] for s in meas.systems])
     chip_rate = np.array([CHIP_RATE[s] for s in meas.systems])
-    iono_scale = (GPS_L1_FREQUENCY / frequency) ** 2
-    is_leo = meas.systems == 'L'
-    if np.any(is_leo):                                  # paper Eq. (2): LEO inside the ionosphere
-        satellite_height = ecef_to_llh(sat[is_leo])[2]
-        iono_scale[is_leo] *= np.clip((satellite_height - cfg.IONO_LOWER_HEIGHT)
-                                      / (cfg.IONO_UPPER_HEIGHT - cfg.IONO_LOWER_HEIGHT), 0.0, 1.0)
+    iono_scale = ionosphere_scale(meas)
     with np.errstate(invalid='ignore', divide='ignore'):
         iono = iono_scale * klobuchar_delay(time, latitude, longitude, elevation, azimuth, alpha, beta)
         tropo = saastamoinen_delay(height, elevation)

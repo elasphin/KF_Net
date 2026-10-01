@@ -56,7 +56,7 @@ IONO_LOWER_HEIGHT = 100e3          # m, h_L of Eq. (2)                          
 IONO_UPPER_HEIGHT = 1000e3         # m, h_H of Eq. (2)                            [paper Sec. II-A]
 LIGHT_TIME_THRESHOLD = 1e-3        # m, epsilon_T of Eq. (5) step 3               [choice A1]
 LEO_ELEVATION_MASK_DEG = 10.0      # deg                                          [choice A2]
-LEO_ELEVATION_BIN_DEG = 10.0       # deg, bins of the real-data error model       [choice A3]
+LEO_ELEVATION_BIN_DEG = 10.0       # deg, bins for MP/NLOS shape and mean C/N0     [choice A3]
 LEO_CODE_CHIP_RATE = 1.023e6       # chip/s, used by the receiver-noise term      [choice A3]
 LEO_NOISE_SEED = {'train': 1, 'test': 2}
 

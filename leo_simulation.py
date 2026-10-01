@@ -6,17 +6,21 @@
   less than epsilon_T.
 - Pseudorange: Eq. (1) with ionosphere Eq. (2) and troposphere; satellite and
   receiver clocks are zero (A4).
-- MP/NLOS + receiver error eps and C/N0: one real GPS/BDS-3 observation of
-  the same dataset in the same elevation bin is drawn at random and its error
-  and C/N0 are both used, so the joint error / C/N0 / elevation statistics of
-  the real data are kept (Sec. III-A, Fig. 5), see A3.
+- Errors, one draw per satellite and epoch (A3):
+  URA, ionosphere and troposphere residuals and receiver noise: Gaussian with
+  the standard deviations of Eq. (3) (formulas of Ref. [35]);
+  MP/NLOS: standard deviation of Eq. (4) (Ref. [37]) times a non-Gaussian
+  shape drawn from the real GPS/BDS-3 errors of the same dataset in the same
+  elevation bin (paper Sec. III-A: statistics of the real data).
+- C/N0: mean C/N0 of the real GPS/BDS-3 observations in the same elevation bin
+  (paper Fig. 5; Ref. [35] gives no elevation-C/N0 formula).
 """
 import numpy as np
 
 import settings as cfg
-from earth_models import EARTH_GM, EARTH_ROTATION_RATE, SPEED_OF_LIGHT, WGS84_A, earth_rotation_angle, \
-    elevation_azimuth
-from gnss_measurements import EpochMeasurements, predict_pseudoranges
+from earth_models import (EARTH_GM, EARTH_ROTATION_RATE, SPEED_OF_LIGHT, WGS84_A, earth_rotation_angle, ecef_to_llh,
+                          elevation_azimuth, iono_error_std, multipath_variance, receiver_noise_std, tropo_error_std)
+from gnss_measurements import EpochMeasurements, ionosphere_scale, predict_pseudoranges
 
 
 # --- Constellation -----------------------------------------------------------
@@ -72,28 +76,30 @@ def elevation_bin(elevation, bin_count):
 
 
 def real_error_bins(data, gnss_epochs):
-    """Real GPS/BDS-3 pseudorange errors and their C/N0, per elevation bin: [(errors, cn0), ...].
+    """Per elevation bin of the real GPS/BDS-3 observations: (error shapes, mean C/N0).
 
-    error = pseudorange - Eq. (1) prediction at the truth antenna position; the
-    receiver clock of each system is removed with the median of the epoch.
+    error = pseudorange - Eq. (1) prediction at the truth antenna position, the
+    receiver clock of each system removed with the median of the epoch; the
+    shape is this error divided by its Eq. (3) standard deviation.
     """
     bin_count = int(np.ceil(90.0 / cfg.LEO_ELEVATION_BIN_DEG))
-    errors, cn0 = [[] for _ in range(bin_count)], [[] for _ in range(bin_count)]
+    shapes, cn0 = [[] for _ in range(bin_count)], [[] for _ in range(bin_count)]
     for k, meas in enumerate(gnss_epochs):
-        predicted, _, elevation, _ = predict_pseudoranges(data.truth_antenna_position[k], meas, data.fusion_times[k],
-                                                          data.klobuchar_alpha, data.klobuchar_beta)
+        predicted, _, elevation, variance = predict_pseudoranges(data.truth_antenna_position[k], meas,
+                                                                 data.fusion_times[k], data.klobuchar_alpha,
+                                                                 data.klobuchar_beta)
         error = meas.pseudoranges - predicted
         for system in ('G', 'C'):
             rows = np.flatnonzero((meas.systems == system) & (elevation > 0.0))
             if len(rows) < 2:
                 continue
-            for b, e, c in zip(elevation_bin(elevation[rows], bin_count), error[rows] - np.median(error[rows]),
-                               meas.cn0[rows]):
-                errors[b].append(e)
+            for b, e, s, c in zip(elevation_bin(elevation[rows], bin_count), error[rows] - np.median(error[rows]),
+                                  np.sqrt(variance[rows]), meas.cn0[rows]):
+                shapes[b].append(e / s)
                 cn0[b].append(c)
-    filled = [b for b in range(bin_count) if errors[b]]
+    filled = [b for b in range(bin_count) if shapes[b]]
     nearest = [min(filled, key=lambda f: abs(f - b)) for b in range(bin_count)]
-    return [(np.array(errors[f]), np.array(cn0[f])) for f in nearest]
+    return [(np.array(shapes[f]), float(np.mean(cn0[f]))) for f in nearest]
 
 
 # --- Simulation --------------------------------------------------------------
@@ -110,12 +116,15 @@ def simulate_leo_measurements(data, error_bins, seed) -> list[EpochMeasurements]
         elevation, _ = elevation_azimuth(receiver, positions)
         visible = np.flatnonzero(elevation >= np.deg2rad(cfg.LEO_ELEVATION_MASK_DEG))
         bins = elevation_bin(elevation[visible], len(error_bins))
-        drawn = [rng.integers(len(error_bins[b][0])) for b in bins]          # one real observation per satellite
-        noise = np.array([error_bins[b][0][j] for b, j in zip(bins, drawn)])
-        cn0 = np.array([error_bins[b][1][j] for b, j in zip(bins, drawn)])
+        cn0 = np.array([error_bins[b][1] for b in bins])
+        shape = np.array([error_bins[b][0][rng.integers(len(error_bins[b][0]))] for b in bins])
         n = len(visible)
         meas = EpochMeasurements(sat_ids[visible], np.full(n, 'L'), np.zeros(n), positions[visible], np.zeros(n), cn0)
         predicted, _, _, _ = predict_pseudoranges(receiver, meas, time, data.klobuchar_alpha, data.klobuchar_beta)
+        e, latitude = elevation[visible], ecef_to_llh(receiver)[0]
+        gaussian_std = np.sqrt(cfg.URA_STD ** 2 + (ionosphere_scale(meas) * iono_error_std(e, latitude)) ** 2
+                               + tropo_error_std(e) ** 2 + receiver_noise_std(cn0, cfg.LEO_CODE_CHIP_RATE) ** 2)
+        noise = gaussian_std * rng.standard_normal(n) + np.sqrt(multipath_variance(e, cn0)) * shape
         meas.pseudoranges = predicted + noise
         epochs.append(meas)
     return epochs

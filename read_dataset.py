@@ -2,8 +2,8 @@
 
 Files used (per folder): README.xml, ROVE*.O (RINEX 3 observations),
 ROVE*GroundTruth.txt (antenna truth), <IMU>_GroundTruth.txt (IMU truth),
-<IMU>.imr (IMU), and the products *.sp3, *.clk, brdm* (in the folder or in
-settings.PRODUCTS_FOLDER).
+<IMU>.imr (IMU), and the products *.sp3, *.clk, brdm* (in the folder, in
+settings.PRODUCTS_FOLDER or in settings.DATASET_FOLDER itself, searched in this order).
 
 The dataset folder is searched in settings.DATASET_FOLDER (any depth): the Google
 Drive folder in Colab, /kaggle/input on Kaggle (no download), ./Dataset on my
@@ -345,7 +345,7 @@ def load_navigation_data(split: str) -> NavigationData:
     truth, SP3 and CLK files.
     """
     folder = find_dataset_folder(cfg.TRAIN_FOLDER_NAME if split == 'train' else cfg.TEST_FOLDER_NAME)
-    product_folders = (folder, cfg.PRODUCTS_FOLDER)
+    product_folders = (folder, cfg.PRODUCTS_FOLDER, cfg.DATASET_FOLDER)
     imu_type, mounting, lever_arm_vehicle = read_rover_info(folder / 'README.xml')
 
     antenna_file = find_one_file([folder], ('ROVE*GroundTruth.txt', 'Rove*GroundTruth.txt'), 'antenna truth')
@@ -367,6 +367,12 @@ def load_navigation_data(split: str) -> NavigationData:
     position, velocity, heading, pitch, roll = interpolate_truth(imu_truth, fusion_times)
     attitude = np.stack([truth_attitude_matrix(*row, mounting) for row in zip(position, heading, pitch, roll)])
     antenna_position = interpolate_truth(antenna_truth, fusion_times)[0]
+    orbit_file = find_one_file(product_folders, ('*.[sS][pP]3',), 'SP3 orbit')
+    clock_file = find_one_file(product_folders, ('*.[cC][lL][kK]',), 'RINEX clock')
+    orbits, clocks = read_sp3(orbit_file, *products), read_clock(clock_file, *products)
+    if not orbits or not clocks:
+        raise FileNotFoundError(f'{orbit_file} or {clock_file} does not cover {folder.name}; '
+                                f'put the SP3 and CLK of its day in {folder}')
     alpha, beta = read_klobuchar(find_one_file(product_folders, ('[bB][rR][dD][mM]*',), 'broadcast navigation'))
 
     return NavigationData(
@@ -374,6 +380,5 @@ def load_navigation_data(split: str) -> NavigationData:
         imu_times=imu_times[keep], gyro=gyro[keep], accel=accel[keep],
         truth_position=position, truth_velocity=velocity, truth_attitude=attitude,
         truth_antenna_position=antenna_position, lever_arm=vehicle_to_body(mounting) @ lever_arm_vehicle,
-        orbits=read_sp3(find_one_file(product_folders, ('*.[sS][pP]3',), 'SP3 orbit'), *products),
-        clocks=read_clock(find_one_file(product_folders, ('*.[cC][lL][kK]',), 'RINEX clock'), *products),
+        orbits=orbits, clocks=clocks,
         klobuchar_alpha=alpha, klobuchar_beta=beta)

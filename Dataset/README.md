@@ -12,4 +12,7 @@ Dataset/
 └── products/          # *.sp3, *.clk, brdm* of both days, if not inside the data folders
 ```
 
+The products are searched in the data folder, then in `products/`, then in `Dataset/` itself (on Kaggle they are at
+the root of the dataset). An SP3 or CLK file that does not cover the dataset stops the run with an error.
+
 Source: https://www.kaggle.com/datasets/fengzhusgg/smartpnt-pos (not redistributed here).

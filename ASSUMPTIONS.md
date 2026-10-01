@@ -28,7 +28,7 @@
 | Sec. II-D: FDE روی نوآوری پیش‌بینی INS، قبل از اعمال بهره‌ی شبکه | `navigation_filter.run_filter` |
 | Eq. (33) آزمون کای‌دو با Q = HPHᵀ + R و α = 10⁻³ ([33]) | `navigation_filter.detect_fault` |
 | شناسایی خطا با آماره‌ی T_i مرجع [33] | `navigation_filter.identify_fault` |
-| Eq. (34) تطبیق DIA: x_i = x₀ − L_i ν و P_i = P₀ + L_i Q L_iᵀ ([33] Eq. 39) | `navigation_filter.adapt_to_fault` |
+| Eq. (34) تطبیق DIA: x_i = x₀ − L_i ν ([33] Eq. 39)؛ P_i = کوواریانس Joseph با بهره‌ی K − L_i (برای بهره‌ی EKF همان P₀ + L_i Q L_iᵀ، و برای بهره‌ی شبکه هم درست) | `navigation_filter.adapt_to_fault` |
 | Table IV (RMSE شمال/شرق/پایین/سه‌بعدی و درصد بهبود هر محور) | `test.summarize`, `show_results.py` |
 | Fig. 18 (مسیر دوبعدی و خطای شمال/شرق/پایین در زمان)، Fig. 19 (CDF هر محور) | `show_results.py` |
 | Fig. 20 (نمودار Stanford افقی و عمودی هر روش جدا، با چگالی نقاط و درصد هر پنج ناحیه، AL = 30 m) | `test.summarize`, `show_results.py` |

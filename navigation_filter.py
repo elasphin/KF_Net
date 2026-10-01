@@ -29,7 +29,7 @@ def detect_fault(innovation, H, R, P_prior):
     Q_inverse = np.linalg.pinv(Q, hermitian=True)
     statistic = innovation @ Q_inverse @ innovation
     threshold = chi2.ppf(1.0 - cfg.FALSE_ALARM_PROBABILITY, np.linalg.matrix_rank(Q, hermitian=True))
-    return statistic > threshold, Q, Q_inverse
+    return statistic > threshold, Q_inverse
 
 
 def identify_fault(innovation, projector, Q_inverse):
@@ -38,12 +38,17 @@ def identify_fault(innovation, projector, Q_inverse):
     return int(np.argmax((c.T @ Q_inverse @ innovation) ** 2 / np.einsum('ji,jk,ki->i', c, Q_inverse, c)))
 
 
-def adapt_to_fault(dx, P_posterior, K, innovation, projector, index, Q, Q_inverse):
-    """Paper Eq. (34): x_i = x_0 - L_i nu, P_i = P_0 + L_i Q L_i^T, L_i = K c_i c_i^+ (Ref. [33] Eq. (39))."""
+def adapt_to_fault(dx, P_prior, K, H, R, innovation, projector, index, Q_inverse):
+    """Paper Eq. (34): x_i = x_0 - L_i nu, L_i = K c_i c_i^+ (Ref. [33] Eq. (39)).
+
+    x_i is the update with the gain K - L_i, so P_i is the Joseph covariance of that gain. For the
+    EKF gain it equals P_0 + L_i Q L_i^T of Eq. (34); that form assumes the optimal gain, so it
+    does not hold for the network gain.
+    """
     c = projector[:, [index]]
     c_plus = (c.T @ Q_inverse) / (c.T @ Q_inverse @ c)
     L = K @ c @ c_plus
-    return dx - L @ innovation, P_posterior + L @ Q @ L.T
+    return dx - L @ innovation, joseph_covariance(P_prior, K - L, H, R)
 
 
 def protection_levels(P, position):
@@ -125,10 +130,10 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
             if covariance:
                 P_posterior = joseph_covariance(P, K, H, R)
                 if fault_detection:
-                    detected, Q, Q_inverse = detect_fault(nu, H, R, P)
+                    detected, Q_inverse = detect_fault(nu, H, R, P)
                     if detected:
                         index = identify_fault(nu, model.projector, Q_inverse)
-                        dx, P_posterior = adapt_to_fault(dx, P_posterior, K, nu, model.projector, index, Q, Q_inverse)
+                        dx, P_posterior = adapt_to_fault(dx, P, K, H, R, nu, model.projector, index, Q_inverse)
                         faulty_satellite = model.measurements.sat_ids[index]
                 P = P_posterior
             gain_square_sum += np.sum(K ** 2, axis=1)

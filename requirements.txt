@@ -1,5 +1,6 @@
 numpy
 scipy
+sgp4
 torch
 matplotlib
 kagglehub

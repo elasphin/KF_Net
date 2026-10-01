@@ -4,8 +4,9 @@ Simulation of J. Yan et al., *"A Robust Position Approach Based on Masked Kalman
 Integrated Navigation System"*, IEEE Internet of Things Journal, vol. 13, no. 11, 2026
 (DOI 10.1109/JIOT.2026.3673906).
 
-Real GPS + BDS-3 pseudoranges and IMU data from the SmartPNT-POS dataset, plus simulated LEO pseudoranges,
-are fused by a 15-state tightly coupled filter whose Kalman gain comes from a masked CNN–LSTM–attention
+Real GPS + BDS-3 pseudoranges and IMU data from the SmartPNT-POS dataset, plus simulated pseudoranges of real
+LEO satellites used as signals of opportunity (Iridium, Orbcomm, Globalstar, OneWeb from TLE files: measured
+with a numerical reference orbit, predicted by the filter with SGP4), are fused by a 15-state tightly coupled filter whose Kalman gain comes from a masked CNN–LSTM–attention
 network. Fault detection and DIA adaptation run on the INS-predicted innovation.
 
 What follows the paper exactly, what was removed, and every assumption the paper leaves open (with the
@@ -22,7 +23,9 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `read_dataset.py` | Reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
 | `earth_models.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4) |
 | `gnss_measurements.py` | Satellite positions/clocks and the pseudorange model of Eq. (1) |
-| `leo_simulation.py` | LEO constellation and pseudorange simulation, Eq. (1), (2), (5) |
+| `leo_orbits.py` | LEO orbits from TLE files: numerical reference orbit (EGM96 20x20, Sun, Moon) and SGP4 prediction |
+| `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_orbits.py`) |
+| `leo_simulation.py` | LEO pseudorange simulation, Eq. (1), (5), and the orbit error variance of the filter |
 | `ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
 | `masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
 | `fault_detection.py` | Fault detection Eq. (33), identification, DIA Eq. (34), protection levels |
@@ -50,6 +53,10 @@ The data folder is set in `dataset_path.py`:
 If the folders are not found there, only the needed files are downloaded with `kagglehub`. Put your Kaggle
 API token in `~/.kaggle/kaggle.json` (or set `KAGGLE_USERNAME` and `KAGGLE_KEY`).
 
+The LEO satellites are read from TLE files (`*.txt`, e.g. from Space-Track) in a folder `LEO_TLE` anywhere in the
+dataset folder. They must cover the dataset days and at least a day around them (an older TLE for the
+prediction and a newer one for the reference orbit); the public Kaggle dataset does not contain them.
+
 Precise orbit/clock products and the broadcast navigation file of the observation day (`*.sp3`, `*.clk`,
 `brdm*`) are read from the data folder or from `products/` inside the dataset path. If the Kaggle folders do
 not contain them, download the MGEX products of that day (e.g. from the IGS/BKG or CDDIS archives) into that
@@ -61,8 +68,9 @@ In Colab, first get the code: `!git clone https://github.com/elasphin/KF_Net.git
 
 ```bash
 pip install -r requirements.txt
-python train.py         # outputs/masked_cla_network.pt (best validation model), training_history.json, training_info.json
-python test.py          # outputs/test_summary.json, test_epochs.csv
+python train.py         # outputs/masked_cla_network.pt (best validation model), training_history.json, training_info.json,
+                        #         leo_orbit_error_train.json (orbit error of the LEO prediction, used in R)
+python test.py          # outputs/test_summary.json, test_epochs.csv, leo_orbit_error_test.json
 python show_results.py  # outputs/results_training.png, results_errors.png, results_cdf.png, results_stanford.png, results_table.txt
 ```
 

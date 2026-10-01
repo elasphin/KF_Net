@@ -2,8 +2,10 @@
 
 Pseudorange model (paper Eq. (1)):
     rho~ = rho + c dt_u - c dt^i + I + T + eps
-The satellite clock dt^i, ionosphere I and troposphere T are corrected with
-the models below; the receiver clock dt_u is handled by ins_filter.py.
+GPS/BDS-3: the satellite clock dt^i, ionosphere I and troposphere T are
+corrected with the models below. LEO: clocks and atmospheric delays are ideal
+(known and removed, A4, A24), so only the geometric range remains. The receiver
+clock dt_u is handled by ins_filter.py.
 """
 from dataclasses import dataclass
 
@@ -12,22 +14,23 @@ import numpy as np
 import settings as cfg
 from earth_models import (BDS_B1I_CHIP_RATE, BDS_B1I_FREQUENCY, EARTH_ROTATION_RATE, GPS_CA_CHIP_RATE,
                           GPS_L1_FREQUENCY, SPEED_OF_LIGHT, ecef_to_llh, elevation_azimuth, klobuchar_delay,
-                          pseudorange_variance, saastamoinen_delay)
+                          multipath_variance, pseudorange_variance, receiver_noise_std, saastamoinen_delay)
 
 SYSTEM_ORDER = ('G', 'C', 'L')                      # GPS, BDS-3, LEO
-FREQUENCY = {'G': GPS_L1_FREQUENCY, 'C': BDS_B1I_FREQUENCY, 'L': GPS_L1_FREQUENCY}
+FREQUENCY = {'G': GPS_L1_FREQUENCY, 'C': BDS_B1I_FREQUENCY}
 CHIP_RATE = {'G': GPS_CA_CHIP_RATE, 'C': BDS_B1I_CHIP_RATE, 'L': cfg.LEO_CODE_CHIP_RATE}
 SP3_INTERPOLATION_POINTS = 10
 
 
 @dataclass
 class EpochMeasurements:
-    sat_ids: np.ndarray                 # 'G05', 'C23', 'L017', ...
+    sat_ids: np.ndarray                 # 'G05', 'C23', 'L43578' (L + NORAD number), ...
     systems: np.ndarray                 # 'G', 'C' or 'L'
     pseudoranges: np.ndarray            # [m]
     satellite_positions: np.ndarray     # ECEF at transmit time [m], shape (n, 3)
     satellite_clocks: np.ndarray        # satellite clock offset [s]
     cn0: np.ndarray                     # C/N0 [dB-Hz]
+    orbit_variance: np.ndarray          # LEO: range error variance of the predicted orbit [m^2] (A25); GNSS: 0
 
     def __len__(self):
         return len(self.sat_ids)
@@ -48,38 +51,37 @@ def merge_measurements(a: EpochMeasurements, b: EpochMeasurements) -> EpochMeasu
 
 
 # --- Predicted pseudorange ---------------------------------------------------
-def ionosphere_scale(meas: EpochMeasurements):
-    """Klobuchar scale per row: frequency (f_L1 / f)^2 and, for LEO, paper Eq. (2)."""
-    frequency = np.array([FREQUENCY[s] for s in meas.systems])
-    scale = (GPS_L1_FREQUENCY / frequency) ** 2
-    is_leo = meas.systems == 'L'
-    if np.any(is_leo):                                  # paper Eq. (2): LEO inside the ionosphere
-        satellite_height = ecef_to_llh(meas.satellite_positions[is_leo])[2]
-        scale[is_leo] *= np.clip((satellite_height - cfg.IONO_LOWER_HEIGHT)
-                                 / (cfg.IONO_UPPER_HEIGHT - cfg.IONO_LOWER_HEIGHT), 0.0, 1.0)
-    return scale
+def geometric_range(antenna, satellites):
+    """Distance from the satellites (ECEF at transmit time) to the antenna, with the Earth rotation (Sagnac) term."""
+    sagnac = EARTH_ROTATION_RATE * (satellites[:, 0] * antenna[1] - satellites[:, 1] * antenna[0]) / SPEED_OF_LIGHT
+    return np.linalg.norm(antenna - satellites, axis=1) + sagnac
 
 
 def predict_pseudoranges(antenna, meas: EpochMeasurements, time, alpha, beta):
     """Eq. (1) without the receiver clock at the given antenna position.
 
     Returns predicted pseudorange, unit line of sight (satellite -> antenna),
-    elevation [rad] and the Eq. (3) variance [m^2].
+    elevation [rad] and the variance [m^2]: Eq. (3) for GPS/BDS-3; MP/NLOS +
+    receiver noise + predicted-orbit error for LEO (A3, A25).
     """
     sat = meas.satellite_positions
     difference = antenna - sat
     distance = np.linalg.norm(difference, axis=1)
-    sagnac = EARTH_ROTATION_RATE * (sat[:, 0] * antenna[1] - sat[:, 1] * antenna[0]) / SPEED_OF_LIGHT
     elevation, azimuth = elevation_azimuth(antenna, sat)
     latitude, longitude, height = ecef_to_llh(antenna)
 
+    is_leo = meas.systems == 'L'
     chip_rate = np.array([CHIP_RATE[s] for s in meas.systems])
-    iono_scale = ionosphere_scale(meas)
+    iono_scale = np.array([(GPS_L1_FREQUENCY / FREQUENCY.get(s, GPS_L1_FREQUENCY)) ** 2 for s in meas.systems])
     with np.errstate(invalid='ignore', divide='ignore'):
-        iono = iono_scale * klobuchar_delay(time, latitude, longitude, elevation, azimuth, alpha, beta)
-        tropo = saastamoinen_delay(height, elevation)
-        variance = pseudorange_variance(elevation, latitude, meas.cn0, iono_scale, chip_rate)
-    predicted = distance + sagnac - SPEED_OF_LIGHT * meas.satellite_clocks + iono + tropo
+        iono = np.where(is_leo, 0.0, iono_scale * klobuchar_delay(time, latitude, longitude, elevation, azimuth,
+                                                                   alpha, beta))
+        tropo = np.where(is_leo, 0.0, saastamoinen_delay(height, elevation))
+        leo_variance = (multipath_variance(elevation, meas.cn0) + receiver_noise_std(meas.cn0, chip_rate) ** 2
+                        + meas.orbit_variance)
+        variance = np.where(is_leo, leo_variance,
+                            pseudorange_variance(elevation, latitude, meas.cn0, iono_scale, chip_rate))
+    predicted = geometric_range(antenna, sat) - SPEED_OF_LIGHT * meas.satellite_clocks + iono + tropo
     return predicted, difference / distance[:, None], elevation, variance
 
 
@@ -135,5 +137,6 @@ def prepare_gnss_measurements(data) -> list[EpochMeasurements]:
         i = np.flatnonzero((epoch == k) & valid)
         systems = np.array([s[0] for s in sat_ids[i]], dtype='<U1')
         epochs.append(sort_measurements(
-            EpochMeasurements(sat_ids[i], systems, pseudoranges[i], positions[i], clocks[i], cn0[i])))
+            EpochMeasurements(sat_ids[i], systems, pseudoranges[i], positions[i], clocks[i], cn0[i],
+                              np.zeros(len(i)))))
     return epochs

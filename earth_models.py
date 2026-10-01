@@ -39,7 +39,7 @@ def gps_seconds(year, month, day, hour, minute, second, time_system='GPS'):
 
 
 def earth_rotation_angle(gps_time):
-    """Greenwich mean sidereal angle [rad] (used to place the simulated LEO orbits in ECEF)."""
+    """Greenwich mean sidereal angle [rad] (rotation of the TEME LEO orbits to ECEF, UT1 = UTC)."""
     julian_date_utc = 2444244.5 + (np.asarray(gps_time) - GPS_UTC_LEAP_SECONDS) / 86400.0
     degrees = 280.46061837 + 360.98564736629 * (julian_date_utc - 2451545.0)
     return np.deg2rad(degrees % 360.0)

@@ -15,14 +15,17 @@ from gnss_measurements import merge_measurements, prepare_gnss_measurements
 from ins_filter import (STATE_SIZE, apply_correction, classical_gain, error_matrix, initial_covariance,
                         joseph_covariance, measurement_model, propagate_ins, state_difference, transition_matrix,
                         truth_state)
-from leo_simulation import real_error_bins, simulate_leo_measurements
+from leo_simulation import orbit_error_variance, real_error_bins, simulate_leo_measurements
 from masked_cla_network import build_network_input
 
 
 def prepare_measurements(data, split):
     """GPS + BDS-3 (real) and LEO (simulated) measurements of every fusion epoch."""
     gnss = prepare_gnss_measurements(data)
-    leo = simulate_leo_measurements(data, real_error_bins(data, gnss), cfg.LEO_NOISE_SEED[split])
+    leo, range_errors = simulate_leo_measurements(data, real_error_bins(data, gnss), cfg.LEO_NOISE_SEED[split])
+    variance = orbit_error_variance(range_errors, split)            # from the training dataset (A25)
+    for meas in leo:
+        meas.orbit_variance[:] = variance
     return [merge_measurements(g, l) for g, l in zip(gnss, leo)]
 
 

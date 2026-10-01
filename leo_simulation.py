@@ -1,73 +1,32 @@
-"""LEO downlink pseudorange simulation (paper Sec. II-A, Sec. III-A).
+"""LEO signal-of-opportunity pseudorange simulation (paper Sec. II-A, Sec. III-A).
 
-- Constellation: 144 Walker + 81 polar satellites (Table II) on circular
-  two-body orbits (substitute for STK HPOP, see ASSUMPTIONS.md A1).
+- Orbits (leo_orbits.py, A1): the measurement is made with the reference orbit
+  (numerical, from the newest TLE); the filter gets the predicted orbit (SGP4
+  of an older TLE) at t - rho/c.
 - Transmit time: iteration of Eq. (5) until the satellite position changes by
   less than epsilon_T.
-- Pseudorange: Eq. (1) with ionosphere Eq. (2) and troposphere; satellite and
-  receiver clocks are zero (A4).
-- Errors, one draw per satellite and epoch (A3):
-  URA, ionosphere and troposphere residuals and receiver noise: Gaussian with
-  the standard deviations of Eq. (3) (formulas of Ref. [35]);
-  MP/NLOS: standard deviation of Eq. (4) (Ref. [37]) times a non-Gaussian
-  shape drawn from the real GPS/BDS-3 errors of the same dataset in the same
-  elevation bin (paper Sec. III-A: statistics of the real data).
+- Pseudorange: geometric range (with the Sagnac term) + noise; satellite and
+  receiver clocks (A4) and ionosphere/troposphere (A24) are ideal, i.e. known
+  and removed, so they are in neither the measurement nor the prediction.
+- Noise, one draw per satellite and epoch (A3): receiver noise, Gaussian with
+  the standard deviation of Eq. (3) (formula of Ref. [35]); MP/NLOS: standard
+  deviation of Eq. (4) (Ref. [37]) times a non-Gaussian shape drawn from the
+  real GPS/BDS-3 errors of the same dataset in the same elevation bin (paper
+  Sec. III-A: statistics of the real data). The orbit error comes from the
+  two orbits, so URA is not added.
 - C/N0: mean C/N0 of the real GPS/BDS-3 observations in the same elevation bin
   (paper Fig. 5; Ref. [35] gives no elevation-C/N0 formula).
+- Orbit error variance of the filter (A25): mean square range error of the
+  predicted orbit on the training dataset, saved in leo_orbit_error_train.json.
 """
+import json
+
 import numpy as np
 
 import settings as cfg
-from earth_models import (EARTH_GM, EARTH_ROTATION_RATE, SPEED_OF_LIGHT, WGS84_A, earth_rotation_angle, ecef_to_llh,
-                          elevation_azimuth, iono_error_std, multipath_variance, receiver_noise_std, tropo_error_std)
-from gnss_measurements import EpochMeasurements, ionosphere_scale, predict_pseudoranges
-
-
-# --- Constellation -----------------------------------------------------------
-def leo_orbit_elements():
-    """(orbit radius, inclination, right ascension of node, argument of latitude at start) per satellite."""
-    rows = []
-    for total, planes, phasing, inclination, altitude in (
-            (cfg.WALKER_SATELLITES, cfg.WALKER_PLANES, cfg.WALKER_PHASING, cfg.WALKER_INCLINATION_DEG,
-             cfg.WALKER_ALTITUDE),
-            (cfg.POLAR_SATELLITES, cfg.POLAR_PLANES, cfg.POLAR_PHASING, cfg.POLAR_INCLINATION_DEG,
-             cfg.POLAR_ALTITUDE)):
-        per_plane = total // planes
-        for plane in range(planes):
-            for slot in range(per_plane):
-                rows.append((WGS84_A + altitude, np.deg2rad(inclination), 2.0 * np.pi * plane / planes,
-                             2.0 * np.pi * slot / per_plane + 2.0 * np.pi * phasing * plane / total))
-    return np.array(rows)
-
-
-def leo_positions(elements, times, start_time):
-    """ECEF positions [n, 3] of all satellites; times: one GPST time per satellite."""
-    radius, inclination, node, latitude_argument = elements.T
-    u = latitude_argument + np.sqrt(EARTH_GM / radius ** 3) * (times - start_time)
-    x_orbit, y_orbit = radius * np.cos(u), radius * np.sin(u)
-    x = x_orbit * np.cos(node) - y_orbit * np.cos(inclination) * np.sin(node)
-    y = x_orbit * np.sin(node) + y_orbit * np.cos(inclination) * np.cos(node)
-    z = y_orbit * np.sin(inclination)
-    angle = earth_rotation_angle(times)
-    return np.stack((np.cos(angle) * x + np.sin(angle) * y, -np.sin(angle) * x + np.cos(angle) * y, z), axis=1)
-
-
-def transmit_positions(elements, reception_time, start_time, receiver):
-    """Paper Eq. (5): satellite positions at T1 = T2 - dT, iterated until they change < epsilon_T."""
-    transit = np.zeros(len(elements))
-    positions = leo_positions(elements, reception_time - transit, start_time)
-    for _ in range(20):
-        angle = EARTH_ROTATION_RATE * transit                    # Earth rotation during transit
-        rotated = np.stack((np.cos(angle) * positions[:, 0] + np.sin(angle) * positions[:, 1],
-                            -np.sin(angle) * positions[:, 0] + np.cos(angle) * positions[:, 1],
-                            positions[:, 2]), axis=1)
-        transit = np.linalg.norm(rotated - receiver, axis=1) / SPEED_OF_LIGHT
-        new_positions = leo_positions(elements, reception_time - transit, start_time)
-        change = np.max(np.linalg.norm(new_positions - positions, axis=1))
-        positions = new_positions
-        if change < cfg.LIGHT_TIME_THRESHOLD:
-            break
-    return positions
+from earth_models import SPEED_OF_LIGHT, elevation_azimuth, multipath_variance, receiver_noise_std
+from gnss_measurements import EpochMeasurements, geometric_range, predict_pseudoranges
+from leo_orbits import leo_orbits
 
 
 # --- Error model from real data ----------------------------------------------
@@ -103,28 +62,69 @@ def real_error_bins(data, gnss_epochs):
 
 
 # --- Simulation --------------------------------------------------------------
-def simulate_leo_measurements(data, error_bins, seed) -> list[EpochMeasurements]:
-    """Simulated LEO pseudoranges at every fusion epoch, at the truth antenna position."""
+def transmit_positions(receiver, position, velocity):
+    """Paper Eq. (5): satellite positions at T1 = T2 - dT, iterated until they change < epsilon_T.
+
+    The orbit is linear over the transit time (< 15 ms): error < 1 mm.
+    """
+    transit = np.zeros(len(position))
+    for _ in range(20):
+        new_transit = geometric_range(receiver, position - transit[:, None] * velocity) / SPEED_OF_LIGHT
+        change = np.max(np.abs(new_transit - transit) * np.linalg.norm(velocity, axis=1), initial=0.0)
+        transit = new_transit
+        if change < cfg.LIGHT_TIME_THRESHOLD:
+            break
+    return position - transit[:, None] * velocity
+
+
+def simulate_leo_measurements(data, error_bins, seed):
+    """Simulated LEO pseudoranges at every fusion epoch, at the truth antenna position.
+
+    Returns the epochs and the range errors of the predicted orbit (predicted
+    minus true geometric range at the truth antenna) of all simulated rows.
+    """
     rng = np.random.default_rng(seed)
-    elements = leo_orbit_elements()
-    sat_ids = np.array([f'L{i + 1:03d}' for i in range(len(elements))])
-    start_time = data.fusion_times[0]
-    epochs = []
-    for k, time in enumerate(data.fusion_times):
+    orbits = leo_orbits(data.fusion_times, data.truth_antenna_position)
+    if not orbits:
+        raise RuntimeError('No LEO satellite with usable TLEs over the dataset (see LEO_TLE_MIN_AGE in settings.py)')
+    sat_ids = np.array([sat_id for sat_id, _, _ in orbits])
+    reference_position, reference_velocity = (np.stack([o[1][i] for o in orbits]) for i in (0, 1))
+    predicted_position, predicted_velocity = (np.stack([o[2][i] for o in orbits]) for i in (0, 1))
+    epochs, range_errors = [], []
+    for k in range(len(data.fusion_times)):
         receiver = data.truth_antenna_position[k]
-        positions = transmit_positions(elements, time, start_time, receiver)
+        positions = transmit_positions(receiver, reference_position[:, k], reference_velocity[:, k])
         elevation, _ = elevation_azimuth(receiver, positions)
         visible = np.flatnonzero(elevation >= np.deg2rad(cfg.LEO_ELEVATION_MASK_DEG))
         bins = elevation_bin(elevation[visible], len(error_bins))
         cn0 = np.array([error_bins[b][1] for b in bins])
         shape = np.array([error_bins[b][0][rng.integers(len(error_bins[b][0]))] for b in bins])
         n = len(visible)
-        meas = EpochMeasurements(sat_ids[visible], np.full(n, 'L'), np.zeros(n), positions[visible], np.zeros(n), cn0)
-        predicted, _, _, _ = predict_pseudoranges(receiver, meas, time, data.klobuchar_alpha, data.klobuchar_beta)
-        e, latitude = elevation[visible], ecef_to_llh(receiver)[0]
-        gaussian_std = np.sqrt(cfg.URA_STD ** 2 + (ionosphere_scale(meas) * iono_error_std(e, latitude)) ** 2
-                               + tropo_error_std(e) ** 2 + receiver_noise_std(cn0, cfg.LEO_CODE_CHIP_RATE) ** 2)
-        noise = gaussian_std * rng.standard_normal(n) + np.sqrt(multipath_variance(e, cn0)) * shape
-        meas.pseudoranges = predicted + noise
-        epochs.append(meas)
-    return epochs
+        true_range = geometric_range(receiver, positions[visible])
+        noise = (receiver_noise_std(cn0, cfg.LEO_CODE_CHIP_RATE) * rng.standard_normal(n)
+                 + np.sqrt(multipath_variance(elevation[visible], cn0)) * shape)
+        pseudoranges = true_range + noise
+        # Filter side: predicted orbit at the transmit time t - rho/c (clocks are ideal, A4).
+        predicted = (predicted_position[visible, k]
+                     - (pseudoranges / SPEED_OF_LIGHT)[:, None] * predicted_velocity[visible, k])
+        range_errors.append(geometric_range(receiver, predicted) - true_range)
+        epochs.append(EpochMeasurements(sat_ids[visible], np.full(n, 'L'), pseudoranges, predicted, np.zeros(n), cn0,
+                                        np.zeros(n)))
+    return epochs, np.concatenate(range_errors)
+
+
+def orbit_error_variance(range_errors, split):
+    """sigma^2 of the predicted orbit in the filter R (A25).
+
+    Writes leo_orbit_error_<split>.json (RMS, mean, samples) and returns the
+    mean square range error of the training dataset (written by train.py).
+    """
+    summary = {'rms_m': float(np.sqrt(np.mean(range_errors ** 2))) if len(range_errors) else 0.0,
+               'mean_m': float(np.mean(range_errors)) if len(range_errors) else 0.0,
+               'samples': int(len(range_errors))}
+    cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+    (cfg.OUTPUT_FOLDER / f'leo_orbit_error_{split}.json').write_text(json.dumps(summary, indent=1))
+    train_file = cfg.OUTPUT_FOLDER / 'leo_orbit_error_train.json'
+    if not train_file.exists():
+        raise FileNotFoundError(f'{train_file} is written by train.py; run train.py first')
+    return json.loads(train_file.read_text())['rms_m'] ** 2

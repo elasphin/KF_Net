@@ -8,22 +8,18 @@ Every value carries a source tag:
     [ref N]       value given in reference [N] of the paper
     [choice AX]   not given by the paper; see item AX in ASSUMPTIONS.md
 """
-from pathlib import Path
 
 import numpy as np
 
-from dataset_path import DATASET_FOLDER
-
-PROJECT_FOLDER = Path(__file__).resolve().parent
+from dataset_path import DATASET_FOLDER, OUTPUT_FOLDER
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
 KAGGLE_DATASET = 'fengzhusgg/smartpnt-pos'                      # [paper Sec. III]
-# DATASET_FOLDER (dataset_path.py): Google Drive in Colab, /kaggle/input on Kaggle, ./Dataset on my computer
+# DATASET_FOLDER and OUTPUT_FOLDER (dataset_path.py): Google Drive in Colab, /kaggle on Kaggle, ./ on my computer
 PRODUCTS_FOLDER = DATASET_FOLDER / 'products'                   # SP3, CLK and brdm files if not in the data folder
 TRAIN_FOLDER_NAME = 'Data01_20230102_ISA-100C_Vehicle_Complex'  # training set (~150 min, Table I)
 TEST_FOLDER_NAME = 'Data02_20220309_ISA-100C_Vehicle_Complex'   # testing set (~110 min, Table I)
 MAX_FUSION_EPOCHS = None           # None = whole dataset; e.g. 300 for a quick run
-OUTPUT_FOLDER = PROJECT_FOLDER / 'outputs'
 RANDOM_SEED = 0
 
 # --- IMU error model (paper Table II) ----------------------------------------
@@ -48,13 +44,14 @@ DLL_BANDWIDTH = 2.0                # Hz                                         
 DLL_CORRELATOR_SPACING = 0.1       # chip                                         [ref 35]
 DLL_INTEGRATION_TIME = 0.02        # s                                            [ref 35]
 
-# --- LEO simulation (paper Sec. II-A, Table II) ------------------------------
-WALKER_SATELLITES, WALKER_PLANES, WALKER_PHASING = 144, 12, 1   # count [paper Table II]; planes/phasing [choice A1]
-WALKER_INCLINATION_DEG, WALKER_ALTITUDE = 55.0, 1000e3                                             # [choice A1]
-POLAR_SATELLITES, POLAR_PLANES, POLAR_PHASING = 81, 9, 1        # count [paper Table II]; planes/phasing [choice A1]
-POLAR_INCLINATION_DEG, POLAR_ALTITUDE = 90.0, 1000e3                                               # [choice A1]
-IONO_LOWER_HEIGHT = 100e3          # m, h_L of Eq. (2)                            [paper Sec. II-A]
-IONO_UPPER_HEIGHT = 1000e3         # m, h_H of Eq. (2)                            [paper Sec. II-A]
+# --- LEO signals of opportunity (paper Sec. II-A; ASSUMPTIONS.md A1-A4, A24, A25) ---
+LEO_TLE_FOLDER_NAME = 'LEO_TLE'    # TLE files (*.txt) of the LEO satellites, inside the dataset folder [choice A1]
+LEO_TLE_MIN_AGE = 0.0              # h, predictor uses the latest TLE published this long before the start [choice A1]
+LEO_MAX_TLE_MISMATCH = 10e3        # m, predictor vs reference TLE at the reference epoch; larger = manoeuvre,
+                                   # satellite left out                                                [choice A1]
+LEO_GRAVITY_DEGREE = 20            # EGM96 degree and order of the reference orbit                    [choice A1]
+LEO_MIN_PERIGEE_ALTITUDE = 700e3   # m, lower satellites (e.g. still raising their orbit) are left out:
+                                   # drag is not in the reference orbit                                 [choice A1]
 LIGHT_TIME_THRESHOLD = 1e-3        # m, epsilon_T of Eq. (5) step 3               [choice A1]
 LEO_ELEVATION_MASK_DEG = 10.0      # deg                                          [choice A2]
 LEO_ELEVATION_BIN_DEG = 10.0       # deg, bins for MP/NLOS shape and mean C/N0     [choice A3]

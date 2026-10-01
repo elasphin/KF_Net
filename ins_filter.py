@@ -107,10 +107,13 @@ class MeasurementModel(NamedTuple):
     projector: np.ndarray             # receiver-clock projector (A5)
 
 
+CLOCK_SYSTEMS = ('G', 'C')            # one receiver clock each (A5); LEO clocks are ideal (A4)
+
+
 def clock_projector(systems, variance):
-    """Removes one receiver clock per system: weighted least-squares clock estimate (A5)."""
+    """Removes one receiver clock per GNSS system: weighted least-squares clock estimate (A5)."""
     P = np.eye(len(systems))
-    for system in SYSTEM_ORDER:
+    for system in CLOCK_SYSTEMS:
         rows = np.flatnonzero(systems == system)
         weights = 1.0 / variance[rows]
         P[np.ix_(rows, rows)] -= np.outer(np.ones(len(rows)), weights / weights.sum())
@@ -126,7 +129,7 @@ def measurement_model(state, meas: EpochMeasurements, lever_arm, time, alpha, be
     if max_count is not None and len(rows) > max_count:                  # A16: keep the highest satellites
         rows = np.sort(rows[np.argsort(-elevation[rows])[:max_count]])
     counts = {s: np.sum(meas.systems[rows] == s) for s in SYSTEM_ORDER}
-    rows = rows[[counts[s] >= 2 for s in meas.systems[rows]]]             # one clock per system needs two rows
+    rows = rows[[s not in CLOCK_SYSTEMS or counts[s] >= 2 for s in meas.systems[rows]]]   # a clock needs two rows
     if len(rows) == 0:
         return None
     H = np.zeros((len(rows), STATE_SIZE))

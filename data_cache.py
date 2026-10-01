@@ -16,15 +16,16 @@ in every run, as before.
 """
 import hashlib
 import pickle
+import time
 from pathlib import Path
 
 import settings as cfg
 from gnss_measurements import merge_measurements, prepare_gnss_measurements
-from leo_satellites import find_tle_folder, orbit_error_variance, real_error_bins, simulate_leo_measurements
+from leo_pseudorange import find_tle_folder, orbit_error_variance, real_error_bins, simulate_leo_measurements
 from read_dataset import find_dataset_folder, load_navigation_data
 
 CODE_FOLDER = Path(__file__).resolve().parent
-DATA_CODE = ('read_dataset.py', 'earth_models.py', 'gnss_measurements.py', 'leo_satellites.py', 'egm96_degree20.txt',
+DATA_CODE = ('read_dataset.py', 'earth_models.py', 'gnss_measurements.py', 'leo_pseudorange.py', 'egm96_degree20.txt',
              'data_cache.py')
 NOT_DATA_SETTINGS = {
     'CONV_FILTERS', 'CONV_KERNEL_SIZE', 'POOL_KERNEL_SIZE', 'LSTM_UNITS', 'LSTM_LAYERS', 'LSTM_DROPOUT',
@@ -49,9 +50,13 @@ def simulate_measurements(data, split):
 
     Returns (GNSS epochs, {LEO filter orbit: LEO epochs}, {LEO filter orbit: range errors}).
     """
+    start = time.time()
     gnss = prepare_gnss_measurements(data)
+    print(f'GNSS measurements: {time.time() - start:.1f} s')
+    start = time.time()
     leo, range_errors = simulate_leo_measurements(data, real_error_bins(data, gnss), cfg.LEO_NOISE_SEED[split],
                                                   split_orbits(split))
+    print(f'LEO orbits and measurements: {time.time() - start:.1f} s')
     return gnss, leo, range_errors
 
 
@@ -92,19 +97,25 @@ def cache_key(split):
     return digest.hexdigest()[:16]
 
 
+def read_and_simulate_now(split):
+    """(data, GNSS epochs, LEO epochs, LEO range errors), computed, with the time of each stage printed."""
+    start = time.time()
+    data = load_navigation_data(split)
+    print(f'{split} dataset read ({len(data.fusion_times)} fusion epochs): {time.time() - start:.1f} s')
+    return (data, *simulate_measurements(data, split))
+
+
 def read_and_simulate(split):
     """(data, GNSS epochs, LEO epochs, LEO range errors): from the cache, or computed and then kept."""
     if not cfg.DATA_CACHE:
-        data = load_navigation_data(split)
-        return (data, *simulate_measurements(data, split))
+        return read_and_simulate_now(split)
     folder = cfg.OUTPUT_FOLDER / 'cache'
     path = folder / f'{split}_{cache_key(split)}.pkl'
     if path.exists():
         print(f'dataset and measurements read from {path}')
         with path.open('rb') as f:
             return pickle.load(f)
-    data = load_navigation_data(split)
-    result = (data, *simulate_measurements(data, split))
+    result = read_and_simulate_now(split)
     folder.mkdir(parents=True, exist_ok=True)
     for old in folder.glob(f'{split}_*.pkl'):
         old.unlink()

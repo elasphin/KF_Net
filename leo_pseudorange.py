@@ -311,7 +311,7 @@ def network_orbit(history, times):
     velocity [m, m/s] at the GPST times, shape (len(times), 3) each. If the code is put
     in another file, add that file to data_cache.DATA_CODE so the cache is renewed.
     """
-    raise NotImplementedError("LEO orbit 'network' is not written yet: leo_satellites.network_orbit")
+    raise NotImplementedError("LEO orbit 'network' is not written yet: leo_pseudorange.network_orbit")
 
 
 def filter_orbit(name, history, reference, times):

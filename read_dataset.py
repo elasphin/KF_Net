@@ -24,6 +24,9 @@ import settings as cfg
 from earth_models import GPS_WEEK_SECONDS, ecef_to_llh, ecef_to_ned_matrix, gps_seconds
 
 IMR_HEADER_SIZE = 512
+TRUTH_TAIL_BYTES = 100_000         # end of a truth file read for its last time
+TRUTH_MARGIN = 10.0                # s, truth rows kept before the first and after the last fusion epoch (interpolation)
+PRODUCT_MARGIN = 3 * 3600.0        # s, SP3/CLK records kept around the fusion epochs (> 10-point Lagrange of 15-min SP3)
 VEHICLE_TO_NAVIGATION = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]])
 # Files of one dataset folder used by this project ({imu} = IMU type from README.xml).
 NEEDED_FILE_PATTERNS = ('README.xml', 'ROVE*GroundTruth.txt', 'Rove*GroundTruth.txt', '{imu}_GroundTruth.txt',
@@ -101,17 +104,46 @@ def truth_attitude_matrix(position, heading_deg, pitch_deg, roll_deg, mounting_d
 
 
 # --- Truth (Inertial Explorer text export) -----------------------------------
-def read_truth(path: Path):
+def truth_row(line):
     """Columns: week, seconds of week, ECEF position (9:12), ECEF velocity (15:18), heading/pitch/roll (21:24)."""
-    rows = []
-    for line in path.read_text(errors='replace').splitlines():
-        v = line.split()
+    v = line.split()
+    return [int(v[0]) * GPS_WEEK_SECONDS + float(v[1]), *map(float, v[9:12]), *map(float, v[15:18]),
+            *map(float, v[21:24])]
+
+
+def first_truth_time(lines):
+    for line in lines:
         try:
-            rows.append([int(v[0]) * GPS_WEEK_SECONDS + float(v[1]), *map(float, v[9:12]), *map(float, v[15:18]),
-                         *map(float, v[21:24])])
+            return truth_row(line)[0]
         except (ValueError, IndexError):
-            if rows:
+            pass
+    raise ValueError('no truth row')
+
+
+def truth_time_span(path: Path):
+    """(first, last) time of the truth table, from the start and the end of the file only."""
+    with path.open('rb') as f:
+        f.seek(max(0, f.seek(0, 2) - TRUTH_TAIL_BYTES))
+        tail = f.read().decode(errors='replace').splitlines()
+    with path.open(errors='replace') as f:
+        return first_truth_time(f), first_truth_time(reversed(tail))
+
+
+def read_truth(path: Path, first, last):
+    """Truth rows with first <= time <= last (the file is in time order)."""
+    rows = []
+    with path.open(errors='replace') as f:
+        for line in f:
+            try:
+                row = truth_row(line)
+            except (ValueError, IndexError):
+                if rows:
+                    break
+                continue
+            if row[0] > last:
                 break
+            if row[0] >= first:
+                rows.append(row)
     return np.array(rows)
 
 
@@ -146,10 +178,11 @@ def read_imu(path: Path, reference_time: float):
 
 
 # --- RINEX 3 observations ----------------------------------------------------
-def read_rinex_observations(path: Path):
+def read_rinex_observations(path: Path, start, stop, max_epochs=None):
     """GPS L1 C/A (C1C) and BDS-3 B1I (C2I, or C1I in RINEX < 3.03) pseudoranges with C/N0.
 
-    Returns [(time GPST, [(sat_id, pseudorange, cn0), ...]), ...].
+    Returns [(time GPST, [(sat_id, pseudorange, cn0), ...]), ...] of the first max_epochs epochs
+    with observations and start <= time <= stop (None = all of them).
     """
     with path.open(errors='replace') as f:
         version = float(f.readline()[:9])
@@ -179,6 +212,11 @@ def read_rinex_observations(path: Path):
             satellite_lines = [f.readline() for _ in range(int(parts[7]))]
             if int(parts[6]) > 1:                          # event records, not observations
                 continue
+            time = gps_seconds(*map(int, parts[:5]), float(parts[5]), time_system)
+            if time < start:
+                continue
+            if time > stop:
+                break
             observations = []
             for text in satellite_lines:
                 sat_id = text[:3].replace(' ', '0')
@@ -192,14 +230,16 @@ def read_rinex_observations(path: Path):
                 cn0 = rinex_number(text[3 + 16 * snr: 17 + 16 * snr])
                 if pseudorange and cn0:
                     observations.append((sat_id, pseudorange, cn0))
-            time = gps_seconds(*map(int, parts[:5]), float(parts[5]), time_system)
-            epochs.append((time, observations))
+            if observations:
+                epochs.append((time, observations))
+                if len(epochs) == max_epochs:
+                    break
     return epochs
 
 
 # --- Products ----------------------------------------------------------------
-def read_sp3(path: Path):
-    """SP3 precise orbits -> {sat_id: (times, positions [m])}."""
+def read_sp3(path: Path, first, last):
+    """SP3 precise orbits with first <= time <= last (the file is in time order) -> {sat_id: (times, positions [m])}."""
     orbits, time, time_system = {}, None, 'GPS'
     for line in path.read_text(errors='replace').splitlines():
         if line.startswith('%c') and line[9:12].strip():
@@ -207,15 +247,17 @@ def read_sp3(path: Path):
         elif line.startswith('*'):
             v = line[1:].split()
             time = gps_seconds(*map(int, v[:5]), float(v[5]), time_system)
-        elif line.startswith('P') and time is not None:
+            if time > last:
+                break
+        elif line.startswith('P') and time is not None and time >= first:
             xyz = np.array(line[4:46].split(), dtype=float)
             if np.any(xyz != 0.0) and np.all(np.abs(xyz) < 999999.0):
                 orbits.setdefault(line[1:4].replace(' ', '0'), []).append((time, *(xyz * 1000.0)))
     return {sat: (np.array(v)[:, 0], np.array(v)[:, 1:]) for sat, v in orbits.items()}
 
 
-def read_clock(path: Path):
-    """RINEX clock -> {sat_id: (times, clock offsets [s])}."""
+def read_clock(path: Path, first, last):
+    """RINEX clock with first <= time <= last (the file is in time order) -> {sat_id: (times, clock offsets [s])}."""
     clocks, time_system = {}, 'GPS'
     with path.open(errors='replace') as f:
         for line in f:
@@ -228,7 +270,10 @@ def read_clock(path: Path):
             if line.startswith('AS '):
                 v = line.split()
                 time = gps_seconds(*map(int, v[2:7]), float(v[7]), time_system)
-                clocks.setdefault(v[1], []).append((time, float(v[9].replace('D', 'E'))))
+                if time > last:
+                    break
+                if time >= first:
+                    clocks.setdefault(v[1], []).append((time, float(v[9].replace('D', 'E'))))
     return {sat: (np.array(v)[:, 0], np.array(v)[:, 1]) for sat, v in clocks.items()}
 
 
@@ -294,23 +339,30 @@ def download_dataset_folder(folder_name: str) -> Path:
 
 # --- Dataset -----------------------------------------------------------------
 def load_navigation_data(split: str) -> NavigationData:
-    """Load the 'train' or 'test' dataset (paper Sec. III) on the GNSS epochs."""
+    """Load the 'train' or 'test' dataset (paper Sec. III) on the GNSS epochs.
+
+    Only the span of the fusion epochs (settings.MAX_FUSION_EPOCHS) is read from the RINEX,
+    truth, SP3 and CLK files.
+    """
     folder = find_dataset_folder(cfg.TRAIN_FOLDER_NAME if split == 'train' else cfg.TEST_FOLDER_NAME)
     product_folders = (folder, cfg.PRODUCTS_FOLDER)
     imu_type, mounting, lever_arm_vehicle = read_rover_info(folder / 'README.xml')
 
-    antenna_truth = read_truth(find_one_file([folder], ('ROVE*GroundTruth.txt', 'Rove*GroundTruth.txt'),
-                                             'antenna truth'))
-    imu_truth = read_truth(folder / f'{imu_type}_GroundTruth.txt')
-    gnss = read_rinex_observations(find_one_file([folder], ('ROVE*.*[oO]',), 'RINEX observation'))
-    imu_times, gyro, accel = read_imu(folder / f'{imu_type}.imr', gnss[0][0])
+    antenna_file = find_one_file([folder], ('ROVE*GroundTruth.txt', 'Rove*GroundTruth.txt'), 'antenna truth')
+    imu_truth_file = folder / f'{imu_type}_GroundTruth.txt'
+    antenna_span, imu_truth_span = truth_time_span(antenna_file), truth_time_span(imu_truth_file)
+    imu_times, gyro, accel = read_imu(folder / f'{imu_type}.imr', antenna_span[0])
 
-    # Fusion epochs: GNSS epochs inside the IMU and both truth spans.
-    start = max(imu_times[0], antenna_truth[0, 0], imu_truth[0, 0])
-    stop = min(imu_times[-1], antenna_truth[-1, 0], imu_truth[-1, 0])
-    gnss = [(t, obs) for t, obs in gnss if start <= t <= stop and obs][:cfg.MAX_FUSION_EPOCHS]
+    # Fusion epochs: the first MAX_FUSION_EPOCHS GNSS epochs inside the IMU and both truth spans.
+    start = max(imu_times[0], antenna_span[0], imu_truth_span[0])
+    stop = min(imu_times[-1], antenna_span[1], imu_truth_span[1])
+    gnss = read_rinex_observations(find_one_file([folder], ('ROVE*.*[oO]',), 'RINEX observation'), start, stop,
+                                   cfg.MAX_FUSION_EPOCHS)
     fusion_times = np.array([t for t, _ in gnss])
     keep = (imu_times >= fusion_times[0] - 1.0) & (imu_times <= fusion_times[-1] + 1.0)
+    first, last = fusion_times[0] - TRUTH_MARGIN, fusion_times[-1] + TRUTH_MARGIN
+    imu_truth, antenna_truth = read_truth(imu_truth_file, first, last), read_truth(antenna_file, first, last)
+    products = (fusion_times[0] - PRODUCT_MARGIN, fusion_times[-1] + PRODUCT_MARGIN)
 
     position, velocity, heading, pitch, roll = interpolate_truth(imu_truth, fusion_times)
     attitude = np.stack([truth_attitude_matrix(*row, mounting) for row in zip(position, heading, pitch, roll)])
@@ -322,6 +374,6 @@ def load_navigation_data(split: str) -> NavigationData:
         imu_times=imu_times[keep], gyro=gyro[keep], accel=accel[keep],
         truth_position=position, truth_velocity=velocity, truth_attitude=attitude,
         truth_antenna_position=antenna_position, lever_arm=vehicle_to_body(mounting) @ lever_arm_vehicle,
-        orbits=read_sp3(find_one_file(product_folders, ('*.[sS][pP]3',), 'SP3 orbit')),
-        clocks=read_clock(find_one_file(product_folders, ('*.[cC][lL][kK]',), 'RINEX clock')),
+        orbits=read_sp3(find_one_file(product_folders, ('*.[sS][pP]3',), 'SP3 orbit'), *products),
+        clocks=read_clock(find_one_file(product_folders, ('*.[cC][lL][kK]',), 'RINEX clock'), *products),
         klobuchar_alpha=alpha, klobuchar_beta=beta)

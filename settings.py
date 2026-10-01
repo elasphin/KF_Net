@@ -92,7 +92,7 @@ LEO_ELEVATION_BIN_DEG = 10.0       # deg, bins for MP/NLOS shape and mean C/N0  
 LEO_CODE_CHIP_RATE = 1.023e6       # chip/s, used by the receiver-noise term      [choice A3]
 LEO_NOISE_SEED = {'train': 1, 'test': 2}
 # LEO orbit used by the filter (A26): 'reference' = true orbit (the one the measurements are made with),
-# 'tle' = SGP4 of the predictor TLE, 'network' = leo_satellites.network_orbit (orbit predicted by a neural
+# 'tle' = SGP4 of the predictor TLE, 'network' = leo_pseudorange.network_orbit (orbit predicted by a neural
 # network, to be written). The network is trained once with LEO_TRAIN_ORBIT and tested with every orbit of
 # LEO_TEST_ORBITS on the same measurements; R is the same in all of them (orbit variance of LEO_TRAIN_ORBIT, A25).
 LEO_TRAIN_ORBIT = 'reference'                       # [choice A26]
@@ -125,7 +125,7 @@ ALERT_LIMIT = 30.0                 # m, Stanford diagrams                       
 
 # --- Run time only (the results do not change; README.md "Run time") --------
 INS_MECHANIZATION = 'numba'        # 'python' (ins_filter.mechanize loop) or 'numba' (same arithmetic, compiled)
-LEO_FORCE_MODEL = 'numba'          # 'python' (leo_satellites.equations_of_motion) or 'numba' (same, compiled)
+LEO_FORCE_MODEL = 'numba'          # 'python' (leo_pseudorange.equations_of_motion) or 'numba' (same, compiled)
 DATA_CACHE = True                  # keep the read dataset and the simulated measurements in OUTPUT_FOLDER/cache
 
 if __name__ == '__main__':

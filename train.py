@@ -85,7 +85,8 @@ def main():
                         'train_position_rmse_m': train['position_rmse_m'],
                         'validation_position_rmse_m': validation['position_rmse_m']})
         print(f"epoch {epoch:4d} | train loss {train['loss']:.4g} | validation loss {validation['loss']:.4g} | "
-              f"train RMSE {train['position_rmse_m']:.3f} m | validation RMSE {validation['position_rmse_m']:.3f} m")
+              f"train RMSE {train['position_rmse_m']:.3f} m | validation RMSE {validation['position_rmse_m']:.3f} m | "
+              f"{time.time() - start_time:.0f} s")
         if validation['loss'] < best_loss:                                # keep the best validation model
             best_loss, epochs_without_improvement = validation['loss'], 0
             info.update(best_epoch=epoch, best_validation_loss=validation['loss'],

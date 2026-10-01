@@ -49,7 +49,7 @@ def get_folders() -> tuple[Path, Path]:
 DATASET_FOLDER, OUTPUT_FOLDER = get_folders()
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
-KAGGLE_DATASET = 'fengzhusgg/smartpnt-pos'                      # [paper Sec. III]
+KAGGLE_DATASET = 'elasphin/mknet-project'                      # [paper Sec. III]
 PRODUCTS_FOLDER = DATASET_FOLDER / 'products'                   # SP3, CLK and brdm files if not in the data folder
 TRAIN_FOLDER_NAME = 'Data01_20230102_ISA-100C_Vehicle_Complex'  # training set (~150 min, Table I)
 TEST_FOLDER_NAME = 'Data02_20220309_ISA-100C_Vehicle_Complex'   # testing set (~110 min, Table I)

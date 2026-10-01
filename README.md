@@ -17,21 +17,17 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 
 | File | Content |
 |---|---|
-| `settings.py` | All settings with their source |
-| `dataset_path.py` | Dataset and output folders in Colab (Google Drive), on Kaggle or on my computer |
-| `kaggle_download.py` | Finds the dataset folders under that path, or downloads the needed files |
-| `read_dataset.py` | Reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
+| `settings.py` | All settings with their source, and the dataset and output folders in Colab (Google Drive), on Kaggle or on my computer |
+| `read_dataset.py` | Finds the dataset folders under that path (or downloads the needed files) and reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
 | `earth_models.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4) |
 | `gnss_measurements.py` | Satellite positions/clocks and the pseudorange model of Eq. (1) |
-| `leo_orbits.py` | LEO orbits from TLE files: numerical reference orbit (EGM96 20x20, Sun, Moon) and SGP4 prediction |
-| `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_orbits.py`) |
-| `leo_simulation.py` | LEO pseudorange simulation, Eq. (1), (5), and the orbit error variance of the filter |
+| `leo_satellites.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; SGP4 prediction), the LEO pseudorange simulation, Eq. (1), (5), and the orbit error variance of the filter |
+| `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_satellites.py`) |
 | `data_cache.py` | Reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
 | `numba_kernels.py` | Compiled copies (Numba) of the INS mechanization loop and the LEO force model, same arithmetic |
 | `ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
 | `masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
-| `fault_detection.py` | Fault detection Eq. (33), identification, DIA Eq. (34), protection levels |
-| `navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test |
+| `navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test, with fault detection Eq. (33), identification, DIA Eq. (34) and protection levels |
 | `train.py` | Offline training with validation, Eq. (30)-(32) |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
 | `show_results.py` | Figures and table as in the paper: train/validation loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size |
@@ -42,7 +38,7 @@ The paper uses the SmartPNT-POS dataset: <https://www.kaggle.com/datasets/fengzh
 (training: `Data01_20230102_ISA-100C_Vehicle_Complex`, testing: `Data02_20220309_ISA-100C_Vehicle_Complex`;
 change the names in `settings.py` if the folders are named differently on Kaggle).
 
-The data folder is set in `dataset_path.py`:
+The data folder is set at the top of `settings.py` (`python settings.py` shows it):
 
 1. **Colab**: Google Drive is mounted and the data is read from `/content/drive/MyDrive/Dataset`
    (the Drive folder <https://drive.google.com/drive/folders/1npnGKO7qwgKPvfoKTclzeA59wfpm860g>). If a script
@@ -76,7 +72,7 @@ python test.py          # outputs/test_summary.json, test_epochs.csv, leo_orbit_
 python show_results.py  # outputs/results_training.png, results_errors.png, results_cdf.png, results_stanford.png, results_table.txt
 ```
 
-The `outputs/` files are written to `OUTPUT_FOLDER` of `dataset_path.py`: `My Drive/KF_Net_outputs` in Colab
+The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`: `My Drive/KF_Net_outputs` in Colab
 (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next to the code on my computer.
 
 For a quick run set `MAX_FUSION_EPOCHS` (e.g. 300) and `TRAINING_EPOCHS` in `settings.py`.
@@ -89,7 +85,7 @@ for bit against the Python versions):
 | Setting | Values | What it does |
 |---|---|---|
 | `INS_MECHANIZATION` | `'numba'` (default) or `'python'` | INS mechanization of every IMU sample (`ins_filter.propagate_ins`): the Python loop of `mechanize`, or the same operations compiled with Numba (`numba_kernels.propagate_ins_samples`), ~16x faster |
-| `LEO_FORCE_MODEL` | `'numba'` (default) or `'python'` | Equations of motion of the LEO reference orbit (EGM96 20x20, Sun, Moon) integrated by DOP853: `leo_orbits.equations_of_motion` or its compiled copy `numba_kernels.leo_equations_of_motion`, ~70x faster |
+| `LEO_FORCE_MODEL` | `'numba'` (default) or `'python'` | Equations of motion of the LEO reference orbit (EGM96 20x20, Sun, Moon) integrated by DOP853: `leo_satellites.equations_of_motion` or its compiled copy `numba_kernels.leo_equations_of_motion`, ~70x faster |
 | `DATA_CACHE` | `True` (default) or `False` | Keeps the read dataset and the simulated measurements in `OUTPUT_FOLDER/cache` (one file per split); later runs read that file. A new file is made when a setting that changes the data, the code that makes it or an input file (dataset, products, TLE) changes; network, training and integrity settings do not count. Delete the folder to force a new one. |
 
 The Numba versions compile on the first run (a few seconds) and keep the compiled code in `__pycache__`.
@@ -99,3 +95,17 @@ when the cache is made (changing `LEO_FORCE_MODEL` makes a new cache file).
 In training and validation (network gain, no fault detection) the filter covariance P is not needed, so it is
 not propagated there; those runs return NaN protection levels. The traditional EKF and `test.py` compute P as
 before.
+
+## References
+
+PDFs in `Papers/`.
+
+- Main paper: J. Yan et al., "A Robust Position Approach Based on Masked KalmanNet for GNSS/LEO/INS Integrated
+  Navigation System," IEEE Internet Things J., vol. 13, no. 11, 2026.
+- [14] G. Revach et al., "KalmanNet: Neural network aided Kalman filtering for partially known dynamics," IEEE TSP, 2022.
+- [15] I. Buchnik et al., "Latent-KalmanNet: Learned Kalman filtering for tracking from high-dimensional signals," IEEE TSP, 2023.
+- [33] S. Ciuban, P. J. G. Teunissen, C. C. J. M. Tiberius, "Dependence between parameter estimation and statistical
+  hypothesis testing," IEEE T-ITS, 2025 (fault detection and DIA, Eq. (33)-(34)).
+- [35] N. S. Zewge, H. Bang, "Fast multi-constellation GNSS satellite selection," IEEE TVT, 2025 (error model, Eq. (3)).
+- [38] H. Zhao, Z. Yang, "A novel fault detection and exclusion method for applying low-cost INS/GNSS integrated
+  navigation system in urban environments," IEEE T-ITS, 2025 (system matrix F).

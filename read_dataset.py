@@ -4,9 +4,16 @@ Files used (per folder): README.xml, ROVE*.O (RINEX 3 observations),
 ROVE*GroundTruth.txt (antenna truth), <IMU>_GroundTruth.txt (IMU truth),
 <IMU>.imr (IMU), and the products *.sp3, *.clk, brdm* (in the folder or in
 settings.PRODUCTS_FOLDER).
+
+The dataset folder is searched in settings.DATASET_FOLDER (any depth): the Google
+Drive folder in Colab, /kaggle/input on Kaggle (no download), ./Dataset on my
+computer. If it is not there, only the files this project needs are downloaded
+with kagglehub; this needs a Kaggle API token (~/.kaggle/kaggle.json or
+KAGGLE_USERNAME / KAGGLE_KEY).
 """
 from dataclasses import dataclass
-from pathlib import Path
+from fnmatch import fnmatch
+from pathlib import Path, PurePosixPath
 import math
 import struct
 import xml.etree.ElementTree as ET
@@ -15,10 +22,12 @@ import numpy as np
 
 import settings as cfg
 from earth_models import GPS_WEEK_SECONDS, ecef_to_llh, ecef_to_ned_matrix, gps_seconds
-from kaggle_download import find_dataset_folder
 
 IMR_HEADER_SIZE = 512
 VEHICLE_TO_NAVIGATION = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]])
+# Files of one dataset folder used by this project ({imu} = IMU type from README.xml).
+NEEDED_FILE_PATTERNS = ('README.xml', 'ROVE*GroundTruth.txt', 'Rove*GroundTruth.txt', '{imu}_GroundTruth.txt',
+                        '{imu}.imr', 'ROVE*.*[oO]', '*.[sS][pP]3', '*.[cC][lL][kK]', '[bB][rR][dD][mM]*')
 
 
 @dataclass
@@ -233,6 +242,54 @@ def read_klobuchar(path: Path):
             if line[60:].strip() == 'IONOSPHERIC CORR' and line[:4] in ('GPSA', 'GPSB'):
                 values[line[:4]] = np.array(line[5:60].replace('D', 'E').split(), dtype=float)
     return values['GPSA'], values['GPSB']
+
+
+# --- Find or download the dataset folder -------------------------------------
+def find_dataset_folder(folder_name: str) -> Path:
+    if cfg.DATASET_FOLDER.is_dir():
+        matches = sorted(p for p in cfg.DATASET_FOLDER.rglob(folder_name) if p.is_dir())
+        if matches:
+            return matches[0]
+    return download_dataset_folder(folder_name)
+
+
+def list_kaggle_files() -> list[str]:
+    from kagglehub.clients import build_kaggle_client
+    from kagglesdk.datasets.types.dataset_api_service import ApiListDatasetFilesRequest
+
+    owner, dataset = cfg.KAGGLE_DATASET.split('/')
+    names, page_token = [], None
+    with build_kaggle_client() as client:
+        while True:
+            request = ApiListDatasetFilesRequest()
+            request.owner_slug, request.dataset_slug, request.page_size = owner, dataset, 200
+            if page_token:
+                request.page_token = page_token
+            response = client.datasets.dataset_api_client.list_dataset_files(request)
+            names += [f.name for f in response.dataset_files]
+            page_token = response.next_page_token
+            if not page_token:
+                return names
+
+
+def download_dataset_folder(folder_name: str) -> Path:
+    import kagglehub
+
+    files = [n for n in list_kaggle_files() if folder_name in PurePosixPath(n).parts]
+    if not files:
+        raise FileNotFoundError(f'{folder_name} was not found in the Kaggle dataset {cfg.KAGGLE_DATASET}. '
+                                f'Set TRAIN_FOLDER_NAME / TEST_FOLDER_NAME in settings.py.')
+
+    def download(names):
+        return [Path(kagglehub.dataset_download(cfg.KAGGLE_DATASET, path=n)) for n in names]
+
+    readme = download([n for n in files if PurePosixPath(n).name == 'README.xml'])
+    if not readme:
+        raise FileNotFoundError(f'README.xml is missing in {folder_name} on Kaggle')
+    imu_type = read_rover_info(readme[0])[0]
+    patterns = [p.format(imu=imu_type) for p in NEEDED_FILE_PATTERNS]
+    download([n for n in files if any(fnmatch(PurePosixPath(n).name, p) for p in patterns)])
+    return readme[0].parent
 
 
 # --- Dataset -----------------------------------------------------------------

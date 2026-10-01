@@ -8,10 +8,10 @@
 
 | بخش مقاله | فایل / تابع |
 |---|---|
-| Eq. (1) مدل شبه‌فاصله‌ی LEO (بدون ساعت و تأخیر جوی، A4 و A24) | `leo_simulation.simulate_leo_measurements`, `gnss_measurements.predict_pseudoranges` |
+| Eq. (1) مدل شبه‌فاصله‌ی LEO (بدون ساعت و تأخیر جوی، A4 و A24) | `leo_satellites.simulate_leo_measurements`, `gnss_measurements.predict_pseudoranges` |
 | Eq. (3) واریانس = URA + iono + tropo + MP/NLOS + receiver، با فرمول‌های [35] | `earth_models.pseudorange_variance` |
 | Eq. (4) مدل MP/NLOS برحسب C/N0 و ارتفاع (goGPS [37]) | `earth_models.multipath_variance` |
-| Eq. (5) تکرار زمان ارسال سیگنال LEO | `leo_simulation.transmit_positions` |
+| Eq. (5) تکرار زمان ارسال سیگنال LEO | `leo_satellites.transmit_positions` |
 | Table II: GPS + BDS-3، مدل خطای IMU (منظومه‌ی LEO جای Walker + قطبی را گرفته، A1) | `settings.py` |
 | Eq. (6)-(7) حالت ۱۵تایی [δp δv δθ b_a b_g] در ECEF، ماتریس F از مرجع [38] | `ins_filter.error_matrix` |
 | Eq. (8) جبران بایاس IMU با بایاس‌های تخمینی | `ins_filter.mechanize` |
@@ -26,9 +26,9 @@
 | Eq. (30), (32) تابع هزینه با داده‌ی مرجع پس‌پردازش + γ‖Θ‖² | `navigation_filter.run_filter`, `train.training_step` |
 | Sec. II-B: بهینه‌سازی متناوب پارامترها ([15] Algorithm 2) | `train.training_step`, `train.main` |
 | Sec. II-D: FDE روی نوآوری پیش‌بینی INS، قبل از اعمال بهره‌ی شبکه | `navigation_filter.run_filter` |
-| Eq. (33) آزمون کای‌دو با Q = HPHᵀ + R و α = 10⁻³ ([33]) | `fault_detection.detect_fault` |
-| شناسایی خطا با آماره‌ی T_i مرجع [33] | `fault_detection.identify_fault` |
-| Eq. (34) تطبیق DIA: x_i = x₀ − L_i ν و P_i = P₀ + L_i Q L_iᵀ ([33] Eq. 39) | `fault_detection.adapt_to_fault` |
+| Eq. (33) آزمون کای‌دو با Q = HPHᵀ + R و α = 10⁻³ ([33]) | `navigation_filter.detect_fault` |
+| شناسایی خطا با آماره‌ی T_i مرجع [33] | `navigation_filter.identify_fault` |
+| Eq. (34) تطبیق DIA: x_i = x₀ − L_i ν و P_i = P₀ + L_i Q L_iᵀ ([33] Eq. 39) | `navigation_filter.adapt_to_fault` |
 | Table IV (RMSE شمال/شرق/پایین/سه‌بعدی و درصد بهبود هر محور) | `test.summarize`, `show_results.py` |
 | Fig. 18 (مسیر دوبعدی و خطای شمال/شرق/پایین در زمان)، Fig. 19 (CDF هر محور) | `show_results.py` |
 | Fig. 20 (نمودار Stanford افقی و عمودی هر روش جدا، با چگالی نقاط و درصد هر پنج ناحیه، AL = 30 m) | `test.summarize`, `show_results.py` |
@@ -62,7 +62,7 @@
 و مدار را برای گیرنده دقیقاً معلوم فرض کرده است. **انتخاب شما:** ماهواره‌های واقعی LEO (Iridium، Orbcomm، Globalstar،
 OneWeb) به‌عنوان سیگنال فرصت، که گیرنده مدار واقعی‌شان را نمی‌داند و آن را از TLE پیش‌بینی می‌کند؛ روش استاندارد
 Kassas & Saroufim, *LEO PNT Frameworks for Non-Cooperative Satellites with Poorly Known Ephemerides*, IEEE AESM
-(مدار مرجع HPOP برای ساخت اندازه‌گیری، SGP4 در فیلتر). پیاده‌سازی در `leo_orbits.py`:
+(مدار مرجع HPOP برای ساخت اندازه‌گیری، SGP4 در فیلتر). پیاده‌سازی در `leo_satellites.py`:
 - **TLEها:** فایل‌های پوشه‌ی `LEO_TLE` در دیتاست. برای هر ماهواره و هر دیتاست، **TLE پیش‌بین** = آخرین TLE منتشرشده
   دست‌کم `LEO_TLE_MIN_AGE` (پیش‌فرض ۰) پیش از شروع داده؛ **TLE مرجع** = TLE جدیدتر نزدیک به وسط داده. پس پیش‌بین
   هیچ‌وقت اطلاعات TLE مرجع را ندارد (برای آزمون منصفانه‌ی پیش‌بین‌های دیگر مثل شبکه‌ی عصبی).

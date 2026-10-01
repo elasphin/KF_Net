@@ -12,9 +12,8 @@ import torch
 import settings as cfg
 from data_cache import load_dataset
 from earth_models import ecef_to_llh, ecef_to_ned_matrix
-from fault_detection import stanford_percentages
 from masked_cla_network import MaskedCLANetwork
-from navigation_filter import run_filter
+from navigation_filter import run_filter, stanford_percentages
 from train import CHECKPOINT_FILE
 
 

@@ -17,7 +17,8 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | File | Content |
 |---|---|
 | `settings.py` | All settings with their source |
-| `kaggle_download.py` | Finds the dataset on Kaggle / locally, or downloads the needed files |
+| `dataset_path.py` | Dataset path in Colab (Google Drive), on Kaggle or on my computer |
+| `kaggle_download.py` | Finds the dataset folders under that path, or downloads the needed files |
 | `read_dataset.py` | Reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
 | `earth_models.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4) |
 | `gnss_measurements.py` | Satellite positions/clocks and the pseudorange model of Eq. (1) |
@@ -36,18 +37,25 @@ The paper uses the SmartPNT-POS dataset: <https://www.kaggle.com/datasets/fengzh
 (training: `Data01_20230102_ISA-100C_Vehicle_Complex`, testing: `Data02_20220309_ISA-100C_Vehicle_Complex`;
 change the names in `settings.py` if the folders are named differently on Kaggle).
 
-The data folder is found in this order:
+The data folder is set in `dataset_path.py`:
 
-1. **Kaggle notebook** with the dataset attached: read directly from `/kaggle/input/smartpnt-pos`.
-2. **Local copy** anywhere under `Dataset/`.
-3. **Automatic download** of only the needed files with `kagglehub`. Put your Kaggle API token in
-   `~/.kaggle/kaggle.json` (or set `KAGGLE_USERNAME` and `KAGGLE_KEY`).
+1. **Colab**: Google Drive is mounted and the data is read from `/content/drive/MyDrive/SmartPNT-POS`
+   (the Drive folder <https://drive.google.com/drive/folders/1npnGKO7qwgKPvfoKTclzeA59wfpm860g>; change
+   `COLAB_FOLDER` if it has another name or place in your Drive).
+2. **Kaggle notebook** with the dataset attached: read directly from `/kaggle/input/smartpnt-pos`.
+3. **My computer**: anywhere under `Dataset/`.
+
+If the folders are not found there, only the needed files are downloaded with `kagglehub`. Put your Kaggle
+API token in `~/.kaggle/kaggle.json` (or set `KAGGLE_USERNAME` and `KAGGLE_KEY`).
 
 Precise orbit/clock products and the broadcast navigation file of the observation day (`*.sp3`, `*.clk`,
-`brdm*`) are read from the data folder or from `Dataset/products/`. If the Kaggle folders do not contain
-them, download the MGEX products of that day (e.g. from the IGS/BKG or CDDIS archives) into `Dataset/products/`.
+`brdm*`) are read from the data folder or from `products/` inside the dataset path. If the Kaggle folders do
+not contain them, download the MGEX products of that day (e.g. from the IGS/BKG or CDDIS archives) into that
+`products/` folder.
 
 ## Run
+
+In Colab, first get the code: `!git clone https://github.com/elasphin/KF_Net.git` and `%cd KF_Net`.
 
 ```bash
 pip install -r requirements.txt

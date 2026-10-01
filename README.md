@@ -39,10 +39,11 @@ change the names in `settings.py` if the folders are named differently on Kaggle
 
 The data folder is set in `dataset_path.py`:
 
-1. **Colab**: Google Drive is mounted and the data is read from `/content/drive/MyDrive/SmartPNT-POS`
-   (the Drive folder <https://drive.google.com/drive/folders/1npnGKO7qwgKPvfoKTclzeA59wfpm860g>; change
-   `COLAB_FOLDER` if it has another name or place in your Drive).
-2. **Kaggle notebook** with the dataset attached: read directly from `/kaggle/input/smartpnt-pos`.
+1. **Colab**: Google Drive is mounted and the data is read from `/content/drive/MyDrive/Dataset`
+   (the Drive folder <https://drive.google.com/drive/folders/1npnGKO7qwgKPvfoKTclzeA59wfpm860g>). If a script
+   run with `!python` cannot mount Drive, run `from google.colab import drive; drive.mount('/content/drive')`
+   in a notebook cell first.
+2. **Kaggle notebook** with the dataset attached: read directly from `/kaggle/input/datasets/elasphin/mknet-project`.
 3. **My computer**: anywhere under `Dataset/`.
 
 If the folders are not found there, only the needed files are downloaded with `kagglehub`. Put your Kaggle

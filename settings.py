@@ -53,7 +53,7 @@ KAGGLE_DATASET = 'elasphin/mknet-project'                      # [paper Sec. III
 PRODUCTS_FOLDER = DATASET_FOLDER / 'products'                   # SP3, CLK and brdm files if not in the data folder
 TRAIN_FOLDER_NAME = 'Data01_20230102_ISA-100C_Vehicle_Complex'  # training set (~150 min, Table I)
 TEST_FOLDER_NAME = 'Data02_20220309_ISA-100C_Vehicle_Complex'   # testing set (~110 min, Table I)
-MAX_FUSION_EPOCHS = None           # None = whole dataset; e.g. 300 for a quick run
+MAX_FUSION_EPOCHS = {'train': None, 'test': None}   # first fusion epochs of each dataset; None = all, e.g. 300
 RANDOM_SEED = 0
 
 # --- IMU error model (paper Table II) ----------------------------------------

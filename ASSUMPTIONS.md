@@ -8,10 +8,10 @@
 
 | بخش مقاله | فایل / تابع |
 |---|---|
-| Eq. (1) مدل شبه‌فاصله‌ی LEO (بدون ساعت و تأخیر جوی، A4 و A24) | `leo_satellites.simulate_leo_measurements`, `gnss_measurements.predict_pseudoranges` |
+| Eq. (1) مدل شبه‌فاصله‌ی LEO (بدون ساعت و تأخیر جوی، A4 و A24) | `leo_pseudorange.simulate_leo_measurements`, `gnss_measurements.predict_pseudoranges` |
 | Eq. (3) واریانس = URA + iono + tropo + MP/NLOS + receiver، با فرمول‌های [35] | `earth_models.pseudorange_variance` |
 | Eq. (4) مدل MP/NLOS برحسب C/N0 و ارتفاع (goGPS [37]) | `earth_models.multipath_variance` |
-| Eq. (5) تکرار زمان ارسال سیگنال LEO | `leo_satellites.transmit_positions` |
+| Eq. (5) تکرار زمان ارسال سیگنال LEO | `leo_pseudorange.transmit_positions` |
 | Table II: GPS + BDS-3، مدل خطای IMU (منظومه‌ی LEO جای Walker + قطبی را گرفته، A1) | `settings.py` |
 | Eq. (6)-(7) حالت ۱۵تایی [δp δv δθ b_a b_g] در ECEF، ماتریس F از مرجع [38] | `ins_filter.error_matrix` |
 | Eq. (8) جبران بایاس IMU با بایاس‌های تخمینی | `ins_filter.mechanize` |
@@ -62,7 +62,7 @@
 و مدار را برای گیرنده دقیقاً معلوم فرض کرده است. **انتخاب شما:** ماهواره‌های واقعی LEO (Iridium، Orbcomm، Globalstar،
 OneWeb) به‌عنوان سیگنال فرصت، که گیرنده مدار واقعی‌شان را نمی‌داند و آن را از TLE پیش‌بینی می‌کند؛ روش استاندارد
 Kassas & Saroufim, *LEO PNT Frameworks for Non-Cooperative Satellites with Poorly Known Ephemerides*, IEEE AESM
-(مدار مرجع HPOP برای ساخت اندازه‌گیری، SGP4 در فیلتر). پیاده‌سازی در `leo_satellites.py`:
+(مدار مرجع HPOP برای ساخت اندازه‌گیری، SGP4 در فیلتر). پیاده‌سازی در `leo_pseudorange.py`:
 - **TLEها:** فایل‌های پوشه‌ی `LEO_TLE` در دیتاست. برای هر ماهواره و هر دیتاست، **TLE پیش‌بین** = آخرین TLE منتشرشده
   دست‌کم `LEO_TLE_MIN_AGE` (پیش‌فرض ۰) پیش از شروع داده؛ **TLE مرجع** = TLE جدیدتر نزدیک به وسط داده. پس پیش‌بین
   هیچ‌وقت اطلاعات TLE مرجع را ندارد (برای آزمون منصفانه‌ی پیش‌بین‌های دیگر مثل شبکه‌ی عصبی).
@@ -221,7 +221,7 @@ Kassas & Saroufim, *LEO PNT Frameworks for Non-Cooperative Satellites with Poorl
 **A26. اثر خطای مدار LEO بر PNT (TLE و مدار شبکه‌ی عصبی).** **انتخاب شما:** شبکه‌ی Masked CLA یک بار با مدار واقعی
 (`LEO_TRAIN_ORBIT = 'reference'`) آموزش می‌بیند و سپس روی داده‌ی آزمون با هر مدار `LEO_TEST_ORBITS` آزموده می‌شود:
 `'reference'` (مدار واقعی، سقف عملکرد)، `'tle'` (SGP4 از TLE پیش‌بین، A1) و بعداً `'network'` (مدار پیش‌بینی شبکه‌ی عصبی،
-تابع `leo_satellites.network_orbit` که تاریخچه‌ی TLEهای تا TLE پیش‌بین را می‌گیرد). همان روش مقالات پیش‌بینی مدار با
+تابع `leo_pseudorange.network_orbit` که تاریخچه‌ی TLEهای تا TLE پیش‌بین را می‌گیرد). همان روش مقالات پیش‌بینی مدار با
 شبکه‌ی عصبی (Kassas، LEO-NNPON): همان فیلتر، همان R، فقط مدار عوض می‌شود.
 - اندازه‌گیری‌ها (شبه‌فاصله، نویز، ماهواره‌ها) برای همه‌ی مدارها یکسان‌اند (یک بار با مدار مرجع ساخته می‌شوند)؛ تفاوت
   نتایج فقط از مدار است.

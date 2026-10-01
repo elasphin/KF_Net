@@ -21,8 +21,8 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `read_dataset.py` | Finds the dataset folders under that path (or downloads the needed files) and reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
 | `earth_models.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4) |
 | `gnss_measurements.py` | Satellite positions/clocks and the pseudorange model of Eq. (1) |
-| `leo_satellites.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5), and the orbit error variance of the filter |
-| `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_satellites.py`) |
+| `leo_pseudorange.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5), and the orbit error variance of the filter |
+| `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_pseudorange.py`) |
 | `data_cache.py` | Reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
 | `ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
 | `masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
@@ -75,12 +75,19 @@ python show_results.py  # outputs/results_training.png, results_orbits.png, resu
 LEO orbit of the filter (ASSUMPTIONS.md A26): the network is trained once with `LEO_TRAIN_ORBIT` (`'reference'`, the
 true orbit) and `test.py` runs it and the traditional EKF with every orbit of `LEO_TEST_ORBITS` on the same
 measurements and the same R: `'reference'` (upper bound), `'tle'` (SGP4 of the TLE available before the dataset) and,
-once `leo_satellites.network_orbit` is written, `'network'` (neural-network orbit prediction).
+once `leo_pseudorange.network_orbit` is written, `'network'` (neural-network orbit prediction).
 
 The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`: `My Drive/KF_Net_outputs` in Colab
 (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next to the code on my computer.
 
-For a quick run set `MAX_FUSION_EPOCHS` (e.g. 300) and `TRAINING_EPOCHS` in `settings.py`.
+For a quick run set `MAX_FUSION_EPOCHS` (e.g. 300) and `TRAINING_EPOCHS` in `settings.py`. Everything is then done
+on the first `MAX_FUSION_EPOCHS` fusion epochs only: the RINEX observations and the two truth files are read only
+over them, the SP3 and CLK products over them +- 3 h (`read_dataset.PRODUCT_MARGIN`, enough for the 10-point SP3
+interpolation, so the GNSS satellite positions and clocks are the same as with the whole files), the LEO orbits are
+made at these epochs, and the LEO error statistics (`real_error_bins`), the LEO orbit error of R and the
+training/validation split come from them. The LEO reference orbit is still integrated from the epoch of its
+reference TLE (ASSUMPTIONS.md A1), so the time from that epoch to the fusion epochs is not shortened. The time of
+each stage (reading, GNSS, LEO) and of the training is printed.
 
 ## Run time
 
@@ -90,7 +97,7 @@ for bit against the Python versions):
 | Setting | Values | What it does |
 |---|---|---|
 | `INS_MECHANIZATION` | `'numba'` (default) or `'python'` | INS mechanization of every IMU sample (`ins_filter.propagate_ins`): the Python loop of `mechanize`, or the same operations compiled with Numba (`ins_filter.mechanize_samples_numba`), ~16x faster |
-| `LEO_FORCE_MODEL` | `'numba'` (default) or `'python'` | Equations of motion of the LEO reference orbit (EGM96 20x20, Sun, Moon) integrated by DOP853: `leo_satellites.equations_of_motion` or its compiled copy `leo_satellites.equations_of_motion_numba`, ~70x faster |
+| `LEO_FORCE_MODEL` | `'numba'` (default) or `'python'` | Equations of motion of the LEO reference orbit (EGM96 20x20, Sun, Moon) integrated by DOP853: `leo_pseudorange.equations_of_motion` or its compiled copy `leo_pseudorange.equations_of_motion_numba`, ~70x faster |
 | `DATA_CACHE` | `True` (default) or `False` | Keeps the read dataset and the simulated measurements in `OUTPUT_FOLDER/cache` (one file per split); later runs read that file. A new file is made when a setting that changes the data, the code that makes it or an input file (dataset, products, TLE) changes; network, training and integrity settings do not count. Delete the folder to force a new one. |
 
 The Numba versions compile on the first run (a few seconds) and keep the compiled code in `__pycache__`.

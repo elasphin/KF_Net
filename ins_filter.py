@@ -166,7 +166,7 @@ def state_difference(a: NavigationState, b: NavigationState):
 def truth_state(data, k) -> NavigationState:
     """Post-processed truth at fusion epoch k, zero biases (the truth has no biases; A7).
 
-    Used as the initial state and as the label of the loss (p, v, theta only).
+    Used as the initial state and its position as the label of the loss.
     """
     return NavigationState(data.truth_position[k], data.truth_velocity[k], data.truth_attitude[k],
                            np.zeros(3), np.zeros(3))

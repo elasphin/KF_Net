@@ -66,8 +66,8 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
                 with torch.set_grad_enabled(training):
                     gain, hidden = network(torch.tensor(features, dtype=torch.float32), length, count, hidden)
                     dx_tensor = gain[:, :count].double() @ torch.from_numpy(nu)
-                    prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:9])
-                    error = prior_error - (link - link.detach())[:9] - dx_tensor[:9]   # x_k - (x_k,k-1 + K dy_k)
+                    prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:3])
+                    error = prior_error - (link - link.detach())[:3] - dx_tensor[:3]   # p_k - (p_k,k-1 + K dy_k)
                     loss = error @ error / (last - first)                           # Eq. (30), mean of Eq. (32)
                     window_loss = window_loss + loss
                     link = link + dx_tensor

@@ -32,8 +32,8 @@ class NavigationState:
 
 def initial_covariance():
     return np.diag(np.concatenate([np.full(3, cfg.INITIAL_POSITION_STD), np.full(3, cfg.INITIAL_VELOCITY_STD),
-                                   np.full(3, cfg.INITIAL_ATTITUDE_STD), np.full(3, cfg.ACCEL_BIAS_INSTABILITY),
-                                   np.full(3, cfg.GYRO_BIAS_INSTABILITY)]) ** 2)
+                                   np.full(3, cfg.INITIAL_ATTITUDE_STD), np.full(3, cfg.INITIAL_ACCEL_BIAS_STD),
+                                   np.full(3, cfg.INITIAL_GYRO_BIAS_STD)]) ** 2)
 
 
 def noise_density():

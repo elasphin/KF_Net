@@ -65,6 +65,10 @@ BIAS_CORRELATION_TIME = 3600.0     # s, bias random-walk density 2*BS^2/tau     
 INITIAL_POSITION_STD = 0.1         # m, accuracy of the post-processed truth      [paper Sec. III-A]
 INITIAL_VELOCITY_STD = 0.01        # m/s                                          [choice A7]
 INITIAL_ATTITUDE_STD = np.deg2rad(0.01)  # rad                                    [choice A7]
+# Turn-on bias of the real IMU (not the in-run instability BS of Table II): the static start of Data01 shows
+# ~3 mg on one accelerometer (check_dataset.py section 4), 19 sigma of the former BS-based value.
+INITIAL_ACCEL_BIAS_STD = 5e-3 * 9.80665               # 5 mg -> m/s^2                [choice A7]
+INITIAL_GYRO_BIAS_STD = np.deg2rad(1.0) / 3600.0      # 1 deg/h -> rad/s             [choice A7]
 
 # --- GNSS (paper Table II, Eq. (3)-(4), Ref. [35], [37]) ---------------------
 BDS3_FIRST_PRN = 19                # BDS-3 satellites are C19 and above           [paper Table II]

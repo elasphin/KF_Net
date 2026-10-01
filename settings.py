@@ -8,22 +8,18 @@ Every value carries a source tag:
     [ref N]       value given in reference [N] of the paper
     [choice AX]   not given by the paper; see item AX in ASSUMPTIONS.md
 """
-from pathlib import Path
 
 import numpy as np
 
-from dataset_path import DATASET_FOLDER
-
-PROJECT_FOLDER = Path(__file__).resolve().parent
+from dataset_path import DATASET_FOLDER, OUTPUT_FOLDER
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
 KAGGLE_DATASET = 'fengzhusgg/smartpnt-pos'                      # [paper Sec. III]
-# DATASET_FOLDER (dataset_path.py): Google Drive in Colab, /kaggle/input on Kaggle, ./Dataset on my computer
+# DATASET_FOLDER and OUTPUT_FOLDER (dataset_path.py): Google Drive in Colab, /kaggle on Kaggle, ./ on my computer
 PRODUCTS_FOLDER = DATASET_FOLDER / 'products'                   # SP3, CLK and brdm files if not in the data folder
 TRAIN_FOLDER_NAME = 'Data01_20230102_ISA-100C_Vehicle_Complex'  # training set (~150 min, Table I)
 TEST_FOLDER_NAME = 'Data02_20220309_ISA-100C_Vehicle_Complex'   # testing set (~110 min, Table I)
 MAX_FUSION_EPOCHS = None           # None = whole dataset; e.g. 300 for a quick run
-OUTPUT_FOLDER = PROJECT_FOLDER / 'outputs'
 RANDOM_SEED = 0
 
 # --- IMU error model (paper Table II) ----------------------------------------

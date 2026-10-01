@@ -17,7 +17,7 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | File | Content |
 |---|---|
 | `settings.py` | All settings with their source |
-| `dataset_path.py` | Dataset path in Colab (Google Drive), on Kaggle or on my computer |
+| `dataset_path.py` | Dataset and output folders in Colab (Google Drive), on Kaggle or on my computer |
 | `kaggle_download.py` | Finds the dataset folders under that path, or downloads the needed files |
 | `read_dataset.py` | Reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
 | `earth_models.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4) |
@@ -43,7 +43,8 @@ The data folder is set in `dataset_path.py`:
    (the Drive folder <https://drive.google.com/drive/folders/1npnGKO7qwgKPvfoKTclzeA59wfpm860g>). If a script
    run with `!python` cannot mount Drive, run `from google.colab import drive; drive.mount('/content/drive')`
    in a notebook cell first.
-2. **Kaggle notebook** with the dataset attached: read directly from `/kaggle/input/datasets/elasphin/mknet-project`.
+2. **Kaggle notebook** with the dataset attached: read directly from `/kaggle/input/datasets/elasphin/mknet-project`
+   (all of `/kaggle/input` is searched if that folder is missing).
 3. **My computer**: anywhere under `Dataset/`.
 
 If the folders are not found there, only the needed files are downloaded with `kagglehub`. Put your Kaggle
@@ -64,5 +65,8 @@ python train.py         # outputs/masked_cla_network.pt (best validation model),
 python test.py          # outputs/test_summary.json, test_epochs.csv
 python show_results.py  # outputs/results_training.png, results_errors.png, results_cdf.png, results_stanford.png, results_table.txt
 ```
+
+The `outputs/` files are written to `OUTPUT_FOLDER` of `dataset_path.py`: `My Drive/KF_Net_outputs` in Colab
+(kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next to the code on my computer.
 
 For a quick run set `MAX_FUSION_EPOCHS` (e.g. 300) and `TRAINING_EPOCHS` in `settings.py`.

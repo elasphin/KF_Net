@@ -11,22 +11,10 @@ import torch
 import settings as cfg
 from earth_models import ecef_to_llh, ecef_to_ned_matrix
 from fault_detection import adapt_to_fault, detect_fault, identify_fault, protection_levels
-from gnss_measurements import merge_measurements, prepare_gnss_measurements
 from ins_filter import (STATE_SIZE, apply_correction, classical_gain, error_matrix, initial_covariance,
-                        joseph_covariance, measurement_model, propagate_ins, state_difference, transition_matrix,
-                        truth_state)
-from leo_simulation import orbit_error_variance, real_error_bins, simulate_leo_measurements
+                        joseph_covariance, measurement_model, process_noise, propagate_ins, state_difference,
+                        transition_matrix, truth_state)
 from masked_cla_network import build_network_input
-
-
-def prepare_measurements(data, split):
-    """GPS + BDS-3 (real) and LEO (simulated) measurements of every fusion epoch."""
-    gnss = prepare_gnss_measurements(data)
-    leo, range_errors = simulate_leo_measurements(data, real_error_bins(data, gnss), cfg.LEO_NOISE_SEED[split])
-    variance = orbit_error_variance(range_errors, split)            # from the training dataset (A25)
-    for meas in leo:
-        meas.orbit_variance[:] = variance
-    return [merge_measurements(g, l) for g, l in zip(gnss, leo)]
 
 
 def run_filter(data, measurements, network=None, first=0, last=None, fault_detection=True, training=False,
@@ -37,6 +25,9 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
     training=True: accumulates the gradient of the Eq. (32) loss. The gradient of a correction dx_k also reaches later epochs
     through the linear error propagation Phi (a correction at k shifts the prior
     at k+1 by Phi dx_k), truncated every BACKPROP_WINDOW epochs (A15).
+    The covariance P is used only by the EKF gain, the fault detection and the protection
+    levels; a network run without fault detection (training, validation) leaves it out and
+    returns NaN protection levels.
     """
     last = len(data.fusion_times) - 1 if last is None else last
     times = data.fusion_times
@@ -48,11 +39,13 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
     if network is not None:
         network.train(training)
     rows, gain_square_sum, gain_columns = [], np.zeros(STATE_SIZE), 0
+    covariance = network is None or fault_detection
 
     for k in range(first + 1, last + 1):
         state, mean_force, accel, gyro = propagate_ins(state, data, times[k - 1], times[k])
-        Phi, Qd = transition_matrix(error_matrix(state, mean_force), times[k] - times[k - 1])
-        P = Phi @ P @ Phi.T + Qd
+        Phi = transition_matrix(error_matrix(state, mean_force), times[k] - times[k - 1])
+        if covariance:
+            P = Phi @ P @ Phi.T + process_noise(Phi, times[k] - times[k - 1])
         link = torch.from_numpy(Phi) @ link
         model = measurement_model(state, measurements[k], data.lever_arm, times[k], data.klobuchar_alpha,
                                   data.klobuchar_beta, max_measurements if network is None else network.max_measurements)
@@ -76,14 +69,15 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
                     link = link + dx_tensor
                 loss_sum += loss.item()
                 K, dx = gain.detach().double().numpy()[:, :count], dx_tensor.detach().numpy()
-            P_posterior = joseph_covariance(P, K, H, R)
-            if fault_detection:
-                detected, Q, Q_inverse = detect_fault(nu, H, R, P)
-                if detected:
-                    index = identify_fault(nu, model.projector, Q_inverse)
-                    dx, P_posterior = adapt_to_fault(dx, P_posterior, K, nu, model.projector, index, Q, Q_inverse)
-                    faulty_satellite = model.measurements.sat_ids[index]
-            P = P_posterior
+            if covariance:
+                P_posterior = joseph_covariance(P, K, H, R)
+                if fault_detection:
+                    detected, Q, Q_inverse = detect_fault(nu, H, R, P)
+                    if detected:
+                        index = identify_fault(nu, model.projector, Q_inverse)
+                        dx, P_posterior = adapt_to_fault(dx, P_posterior, K, nu, model.projector, index, Q, Q_inverse)
+                        faulty_satellite = model.measurements.sat_ids[index]
+                P = P_posterior
             gain_square_sum += np.sum(K ** 2, axis=1)
             gain_columns += count
 
@@ -105,7 +99,8 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
 
         antenna, truth = state.position + state.attitude @ data.lever_arm, data.truth_antenna_position[k]
         rows.append((times[k], ecef_to_ned_matrix(*ecef_to_llh(truth)[:2]) @ (antenna - truth),
-                     *protection_levels(P, state.position), count, faulty_satellite))
+                     *(protection_levels(P, state.position) if covariance else (np.nan, np.nan)), count,
+                     faulty_satellite))
 
     ned_error = np.array([r[1] for r in rows])
     return {

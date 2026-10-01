@@ -2,5 +2,6 @@ numpy
 scipy
 sgp4
 torch
+numba
 matplotlib
 kagglehub

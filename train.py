@@ -20,10 +20,10 @@ import numpy as np
 import torch
 
 import settings as cfg
+from data_cache import load_dataset
 from ins_filter import STATE_SIZE
 from masked_cla_network import FIXED_FEATURE_SIZE, MaskedCLANetwork
-from navigation_filter import prepare_measurements, run_filter
-from read_dataset import load_navigation_data
+from navigation_filter import run_filter
 
 CHECKPOINT_FILE = cfg.OUTPUT_FOLDER / 'masked_cla_network.pt'
 
@@ -44,8 +44,7 @@ def main():
     torch.manual_seed(cfg.RANDOM_SEED)
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
     start_time = time.time()
-    data = load_navigation_data('train')
-    measurements = prepare_measurements(data, 'train')
+    data, measurements = load_dataset('train')
     last = len(data.fusion_times) - 1
     split = int(round(last * (1.0 - cfg.VALIDATION_FRACTION)))       # train: 0..split, validation: split..last
     max_measurements = max(len(m) for m in measurements[:split + 1])  # N_max of Eq. (16)

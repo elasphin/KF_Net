@@ -26,6 +26,8 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `leo_orbits.py` | LEO orbits from TLE files: numerical reference orbit (EGM96 20x20, Sun, Moon) and SGP4 prediction |
 | `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_orbits.py`) |
 | `leo_simulation.py` | LEO pseudorange simulation, Eq. (1), (5), and the orbit error variance of the filter |
+| `data_cache.py` | Reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
+| `numba_kernels.py` | Compiled copies (Numba) of the INS mechanization loop and the LEO force model, same arithmetic |
 | `ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
 | `masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
 | `fault_detection.py` | Fault detection Eq. (33), identification, DIA Eq. (34), protection levels |
@@ -78,3 +80,22 @@ The `outputs/` files are written to `OUTPUT_FOLDER` of `dataset_path.py`: `My Dr
 (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next to the code on my computer.
 
 For a quick run set `MAX_FUSION_EPOCHS` (e.g. 300) and `TRAINING_EPOCHS` in `settings.py`.
+
+## Run time
+
+Three settings at the end of `settings.py` only change the run time; the results stay the same (checked bit
+for bit against the Python versions):
+
+| Setting | Values | What it does |
+|---|---|---|
+| `INS_MECHANIZATION` | `'numba'` (default) or `'python'` | INS mechanization of every IMU sample (`ins_filter.propagate_ins`): the Python loop of `mechanize`, or the same operations compiled with Numba (`numba_kernels.propagate_ins_samples`), ~16x faster |
+| `LEO_FORCE_MODEL` | `'numba'` (default) or `'python'` | Equations of motion of the LEO reference orbit (EGM96 20x20, Sun, Moon) integrated by DOP853: `leo_orbits.equations_of_motion` or its compiled copy `numba_kernels.leo_equations_of_motion`, ~70x faster |
+| `DATA_CACHE` | `True` (default) or `False` | Keeps the read dataset and the simulated measurements in `OUTPUT_FOLDER/cache` (one file per split); later runs read that file. A new file is made when a setting that changes the data, the code that makes it or an input file (dataset, products, TLE) changes; network, training and integrity settings do not count. Delete the folder to force a new one. |
+
+The Numba versions compile on the first run (a few seconds) and keep the compiled code in `__pycache__`.
+To compare the two `LEO_FORCE_MODEL` versions, note that with `DATA_CACHE = True` the orbits are computed only
+when the cache is made (changing `LEO_FORCE_MODEL` makes a new cache file).
+
+In training and validation (network gain, no fault detection) the filter covariance P is not needed, so it is
+not propagated there; those runs return NaN protection levels. The traditional EKF and `test.py` compute P as
+before.

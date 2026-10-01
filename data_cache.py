@@ -9,7 +9,7 @@ OUTPUT_FOLDER/cache/<split>_<key>.pkl. The key is a hash of everything they depe
   - all settings except the network, training, integrity and run-time ones (NOT_DATA_SETTINGS),
   - the LEO filter orbits of the split (LEO_TRAIN_ORBIT or LEO_TEST_ORBITS, A26) and its MAX_FUSION_EPOCHS,
   - the code that makes them (DATA_CODE files),
-  - name, size and modification time of the input files (dataset folder, products, TLE files).
+  - name, size and modification time of the input files (data folder, products, dataset root, TLE files).
 A change in any of these makes a new cache file (the old one of that split is removed). The LEO
 orbit error variance of the filter R (A25) is not kept: it is set from leo_orbit_error_train.json
 in every run, as before.
@@ -76,10 +76,11 @@ def prepare_measurements(split, gnss, leo, range_errors):
 
 
 def input_files(folder):
-    """Files read for one dataset folder: the folder itself, the products folder and the LEO TLE files."""
+    """Files read for one dataset folder: the folder itself, the products folders and the LEO TLE files."""
     files = [p for p in folder.iterdir() if p.is_file()]
-    if cfg.PRODUCTS_FOLDER.is_dir():
-        files += [p for p in cfg.PRODUCTS_FOLDER.iterdir() if p.is_file()]
+    for products in (cfg.PRODUCTS_FOLDER, cfg.DATASET_FOLDER):
+        if products.is_dir():
+            files += [p for p in products.iterdir() if p.is_file()]
     return sorted(files) + sorted(find_tle_folder().rglob('*.txt'))
 
 

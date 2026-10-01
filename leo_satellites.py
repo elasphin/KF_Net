@@ -12,16 +12,18 @@ EGM96 20x20 gravity and Sun/Moon point masses; this replaces STK HPOP, as in
 Kassas & Saroufim, IEEE AESM (HPOP truth, SGP4 in the filter). Drag and solar
 radiation pressure are left out (< 5 m in 12 h above 750 km); satellites
 with perigee below LEO_MIN_PERIGEE_ALTITUDE are therefore not used.
-Predicted orbit (used by the filter): SGP4 of the predictor TLE. To test
-another orbit predictor (e.g. a neural network), replace predicted_orbit(); the
-orbit error variance of the filter is re-estimated from it (A25).
+Filter orbit (A26, settings LEO_TRAIN_ORBIT and LEO_TEST_ORBITS): 'reference'
+(the reference orbit itself, i.e. the true orbit), 'tle' (SGP4 of the
+predictor TLE) or 'network' (network_orbit(), a neural-network orbit predictor
+to be written). All filter orbits share the same satellites and the same
+simulated pseudoranges, so their results differ only by the orbit.
 Orbits are integrated in TEME and rotated to ECEF with the Greenwich mean
 sidereal angle (polar motion ignored, the same rotation for both orbits).
 
 Measurements:
 - Orbits (A1, above): the measurement is made with the reference orbit
-  (numerical, from the newest TLE); the filter gets the predicted orbit (SGP4
-  of an older TLE) at t - rho/c.
+  (numerical, from the newest TLE); the filter gets its filter orbit at
+  t - rho/c.
 - Transmit time: iteration of Eq. (5) until the satellite position changes by
   less than epsilon_T.
 - Pseudorange: geometric range (with the Sagnac term) + noise; satellite and
@@ -36,7 +38,9 @@ Measurements:
 - C/N0: mean C/N0 of the real GPS/BDS-3 observations in the same elevation bin
   (paper Fig. 5; Ref. [35] gives no elevation-C/N0 formula).
 - Orbit error variance of the filter (A25): mean square range error of the
-  predicted orbit on the training dataset, saved in leo_orbit_error_train.json.
+  training filter orbit on the training dataset, saved in
+  leo_orbit_error_train.json (zero for the reference orbit), used in R of every
+  test orbit.
 """
 import json
 from math import factorial
@@ -211,9 +215,26 @@ def reference_orbit(tle, times):
     return teme_to_ecef(times, states[:, :3], states[:, 3:])
 
 
-def predicted_orbit(tle, times):
-    """Orbit used by the filter: SGP4 of the predictor TLE."""
-    return sgp4_orbit(tle, times)
+def network_orbit(history, times):
+    """Orbit predicted by a neural network (A26), to be written.
+
+    history: TLEs of the satellite (sgp4 Satrec, ascending epoch) published up to the
+    predictor TLE (history[-1]), never the reference TLE. Returns ECEF position and
+    velocity [m, m/s] at the GPST times, shape (len(times), 3) each. If the code is put
+    in another file, add that file to data_cache.DATA_CODE so the cache is renewed.
+    """
+    raise NotImplementedError("LEO orbit 'network' is not written yet: leo_satellites.network_orbit")
+
+
+def filter_orbit(name, history, reference, times):
+    """ECEF position and velocity of the filter orbit 'name' (A26) at the GPST times."""
+    if name == 'reference':
+        return reference
+    if name == 'tle':
+        return sgp4_orbit(history[-1], times)
+    if name == 'network':
+        return network_orbit(history, times)
+    raise ValueError(f"LEO orbit must be 'reference', 'tle' or 'network', not {name!r}")
 
 
 # --- TLE files and satellite selection ---------------------------------------
@@ -244,8 +265,12 @@ def above_mask(positions, receivers, margin_deg=2.0):
     return np.nanmax(sin_elevation) >= np.sin(np.deg2rad(cfg.LEO_ELEVATION_MASK_DEG - margin_deg))
 
 
-def leo_orbits(times, receivers):
-    """[(satellite id, reference (position, velocity), predicted (position, velocity))] at the fusion times."""
+def leo_orbits(times, receivers, orbit_names):
+    """[(satellite id, reference (position, velocity), {filter orbit name: (position, velocity)})] at the fusion times.
+
+    The satellites are chosen the same way for every filter orbit (they need a predictor TLE), so
+    every filter orbit sees the same satellites.
+    """
     start, middle = times[0], 0.5 * (times[0] + times[-1])
     orbits = []
     for number, tles in read_tle_files(find_tle_folder()).items():
@@ -266,10 +291,15 @@ def leo_orbits(times, receivers):
                                   - sgp4_orbit(reference_tle, at_reference_epoch)[0])
         if not mismatch <= cfg.LEO_MAX_TLE_MISMATCH:          # manoeuvre between the two TLEs (or SGP4 failure)
             continue
-        predicted = predicted_orbit(predictor_tle, times)
-        if np.isnan(predicted[0]).any():
+        if np.isnan(sgp4_orbit(predictor_tle, times)[0]).any():
             continue
-        orbits.append((f'L{number:05d}', reference_orbit(reference_tle, times), predicted))
+        reference = reference_orbit(reference_tle, times)
+        history = tles[:older[-1] + 1]
+        filter_orbits = {name: filter_orbit(name, history, reference, times) for name in orbit_names}
+        for name, (position, velocity) in filter_orbits.items():
+            if not (np.isfinite(position).all() and np.isfinite(velocity).all()):
+                raise ValueError(f'LEO orbit {name!r} of L{number:05d} is not finite over the dataset')
+        orbits.append((f'L{number:05d}', reference, filter_orbits))
     return orbits
 
 
@@ -322,20 +352,23 @@ def transmit_positions(receiver, position, velocity):
     return position - transit[:, None] * velocity
 
 
-def simulate_leo_measurements(data, error_bins, seed):
+def simulate_leo_measurements(data, error_bins, seed, orbit_names):
     """Simulated LEO pseudoranges at every fusion epoch, at the truth antenna position.
 
-    Returns the epochs and the range errors of the predicted orbit (predicted
-    minus true geometric range at the truth antenna) of all simulated rows.
+    The pseudoranges (and their noise draws) are made once with the reference orbit; every
+    filter orbit of orbit_names (A26) gets the same rows with its own satellite positions.
+    Returns {orbit name: epochs} and {orbit name: range errors of that orbit (filter minus
+    true geometric range at the truth antenna) of all simulated rows}.
     """
     rng = np.random.default_rng(seed)
-    orbits = leo_orbits(data.fusion_times, data.truth_antenna_position)
+    orbits = leo_orbits(data.fusion_times, data.truth_antenna_position, orbit_names)
     if not orbits:
         raise RuntimeError('No LEO satellite with usable TLEs over the dataset (see LEO_TLE_MIN_AGE in settings.py)')
     sat_ids = np.array([sat_id for sat_id, _, _ in orbits])
     reference_position, reference_velocity = (np.stack([o[1][i] for o in orbits]) for i in (0, 1))
-    predicted_position, predicted_velocity = (np.stack([o[2][i] for o in orbits]) for i in (0, 1))
-    epochs, range_errors = [], []
+    filter_position = {name: np.stack([o[2][name][0] for o in orbits]) for name in orbit_names}
+    filter_velocity = {name: np.stack([o[2][name][1] for o in orbits]) for name in orbit_names}
+    epochs, range_errors = {name: [] for name in orbit_names}, {name: [] for name in orbit_names}
     for k in range(len(data.fusion_times)):
         receiver = data.truth_antenna_position[k]
         positions = transmit_positions(receiver, reference_position[:, k], reference_velocity[:, k])
@@ -349,27 +382,41 @@ def simulate_leo_measurements(data, error_bins, seed):
         noise = (receiver_noise_std(cn0, cfg.LEO_CODE_CHIP_RATE) * rng.standard_normal(n)
                  + np.sqrt(multipath_variance(elevation[visible], cn0)) * shape)
         pseudoranges = true_range + noise
-        # Filter side: predicted orbit at the transmit time t - rho/c (clocks are ideal, A4).
-        predicted = (predicted_position[visible, k]
-                     - (pseudoranges / SPEED_OF_LIGHT)[:, None] * predicted_velocity[visible, k])
-        range_errors.append(geometric_range(receiver, predicted) - true_range)
-        epochs.append(EpochMeasurements(sat_ids[visible], np.full(n, 'L'), pseudoranges, predicted, np.zeros(n), cn0,
-                                        np.zeros(n)))
-    return epochs, np.concatenate(range_errors)
+        for name in orbit_names:
+            # Filter side: the filter orbit at the transmit time t - rho/c (clocks are ideal, A4).
+            satellites = (filter_position[name][visible, k]
+                          - (pseudoranges / SPEED_OF_LIGHT)[:, None] * filter_velocity[name][visible, k])
+            range_errors[name].append(geometric_range(receiver, satellites) - true_range)
+            epochs[name].append(EpochMeasurements(sat_ids[visible], np.full(n, 'L'), pseudoranges, satellites,
+                                                  np.zeros(n), cn0, np.zeros(n)))
+    return epochs, {name: np.concatenate(errors) for name, errors in range_errors.items()}
+
+
+def range_error_summary(range_errors):
+    return {'rms_m': float(np.sqrt(np.mean(range_errors ** 2))) if len(range_errors) else 0.0,
+            'mean_m': float(np.mean(range_errors)) if len(range_errors) else 0.0,
+            'samples': int(len(range_errors))}
 
 
 def orbit_error_variance(range_errors, split):
-    """sigma^2 of the predicted orbit in the filter R (A25).
+    """sigma^2 of the orbit error in the filter R (A25), the same for every filter orbit (A26).
 
-    Writes leo_orbit_error_<split>.json (RMS, mean, samples) and returns the
-    mean square range error of the training dataset (written by train.py).
+    range_errors: {filter orbit name: range errors}. Writes leo_orbit_error_<split>.json
+    (train: RMS, mean and samples of LEO_TRAIN_ORBIT; test: the same for each test orbit) and
+    returns the mean square range error of LEO_TRAIN_ORBIT on the training dataset (written by
+    train.py; zero for the reference orbit).
     """
-    summary = {'rms_m': float(np.sqrt(np.mean(range_errors ** 2))) if len(range_errors) else 0.0,
-               'mean_m': float(np.mean(range_errors)) if len(range_errors) else 0.0,
-               'samples': int(len(range_errors))}
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
-    (cfg.OUTPUT_FOLDER / f'leo_orbit_error_{split}.json').write_text(json.dumps(summary, indent=1))
     train_file = cfg.OUTPUT_FOLDER / 'leo_orbit_error_train.json'
+    if split == 'train':
+        summary = {'orbit': cfg.LEO_TRAIN_ORBIT, **range_error_summary(range_errors[cfg.LEO_TRAIN_ORBIT])}
+    else:
+        summary = {name: range_error_summary(errors) for name, errors in range_errors.items()}
+    (cfg.OUTPUT_FOLDER / f'leo_orbit_error_{split}.json').write_text(json.dumps(summary, indent=1))
     if not train_file.exists():
         raise FileNotFoundError(f'{train_file} is written by train.py; run train.py first')
-    return json.loads(train_file.read_text())['rms_m'] ** 2
+    train = json.loads(train_file.read_text())
+    if train.get('orbit') != cfg.LEO_TRAIN_ORBIT:
+        raise ValueError(f"{train_file} is for LEO orbit {train.get('orbit')!r}, settings.LEO_TRAIN_ORBIT is "
+                         f'{cfg.LEO_TRAIN_ORBIT!r}; run train.py again')
+    return train['rms_m'] ** 2

@@ -1,12 +1,13 @@
 """Read dataset and simulated measurements of 'train' or 'test', kept on disk between runs (settings.DATA_CACHE).
 
     from data_cache import load_dataset
-    data, measurements = load_dataset('train')
+    data, measurements = load_dataset('train')      # measurements: {LEO filter orbit: epochs} (A26)
 
 Reading the RINEX/IMU/truth files, the GNSS satellite orbits and the LEO orbit integration and
 simulation give the same result in every run (fixed seeds), so they are done once and kept in
 OUTPUT_FOLDER/cache/<split>_<key>.pkl. The key is a hash of everything they depend on:
   - all settings except the network, training, integrity and run-time ones (NOT_DATA_SETTINGS),
+  - the LEO filter orbits of the split (LEO_TRAIN_ORBIT or LEO_TEST_ORBITS, A26),
   - the code that makes them (DATA_CODE files),
   - name, size and modification time of the input files (dataset folder, products, TLE files).
 A change in any of these makes a new cache file (the old one of that split is removed). The LEO
@@ -31,28 +32,41 @@ NOT_DATA_SETTINGS = {
     'BACKPROP_WINDOW', 'VALIDATION_FRACTION', 'EARLY_STOPPING_PATIENCE', 'GRADIENT_CLIP_NORM',
     'FALSE_ALARM_PROBABILITY', 'HORIZONTAL_PL_FACTOR', 'VERTICAL_PL_FACTOR', 'ALERT_LIMIT',
     'INS_MECHANIZATION', 'DATA_CACHE',
+    'LEO_TRAIN_ORBIT', 'LEO_TEST_ORBITS',          # only the orbits of the split are in the key (split_orbits)
     'TRAIN_FOLDER_NAME', 'TEST_FOLDER_NAME',      # the folder of the split is in the key itself
     'PROJECT_FOLDER', 'COLAB_FOLDER', 'COLAB_OUTPUT_FOLDER', 'KAGGLE_FOLDER', 'KAGGLE_OUTPUT_FOLDER', 'LOCAL_FOLDER',
     'LOCAL_OUTPUT_FOLDER',                        # candidates of DATASET_FOLDER / OUTPUT_FOLDER (these are in the key)
 }
 
 
+def split_orbits(split):
+    """LEO filter orbits of the split (A26): the training orbit, or every test orbit."""
+    return (cfg.LEO_TRAIN_ORBIT,) if split == 'train' else tuple(cfg.LEO_TEST_ORBITS)
+
+
 def simulate_measurements(data, split):
     """GPS + BDS-3 (real) and LEO (simulated) measurements of every fusion epoch, LEO orbit variance not yet set.
 
-    Returns (GNSS epochs, LEO epochs, range errors of the predicted LEO orbit).
+    Returns (GNSS epochs, {LEO filter orbit: LEO epochs}, {LEO filter orbit: range errors}).
     """
     gnss = prepare_gnss_measurements(data)
-    leo, range_errors = simulate_leo_measurements(data, real_error_bins(data, gnss), cfg.LEO_NOISE_SEED[split])
+    leo, range_errors = simulate_leo_measurements(data, real_error_bins(data, gnss), cfg.LEO_NOISE_SEED[split],
+                                                  split_orbits(split))
     return gnss, leo, range_errors
 
 
 def prepare_measurements(split, gnss, leo, range_errors):
-    """Merged measurements of every fusion epoch with the LEO orbit error variance of the filter R."""
-    variance = orbit_error_variance(range_errors, split)            # from the training dataset (A25)
-    for meas in leo:
-        meas.orbit_variance[:] = variance
-    return [merge_measurements(g, l) for g, l in zip(gnss, leo)]
+    """{LEO filter orbit: merged measurements of every fusion epoch}, with the LEO orbit error variance of R.
+
+    The variance is the same for every filter orbit: that of LEO_TRAIN_ORBIT on the training dataset (A25, A26).
+    """
+    variance = orbit_error_variance(range_errors, split)
+    measurements = {}
+    for name, epochs in leo.items():
+        for meas in epochs:
+            meas.orbit_variance[:] = variance
+        measurements[name] = [merge_measurements(g, l) for g, l in zip(gnss, epochs)]
+    return measurements
 
 
 def input_files(folder):
@@ -66,7 +80,7 @@ def input_files(folder):
 def cache_key(split):
     folder_name = cfg.TRAIN_FOLDER_NAME if split == 'train' else cfg.TEST_FOLDER_NAME
     folder = find_dataset_folder(folder_name)
-    digest = hashlib.sha256(f'{split} {folder_name}'.encode())
+    digest = hashlib.sha256(f'{split} {folder_name} {split_orbits(split)}'.encode())
     for name, value in sorted(vars(cfg).items()):
         if name.isupper() and name not in NOT_DATA_SETTINGS:
             digest.update(f'{name}={value!r}\n'.encode())
@@ -103,6 +117,6 @@ def read_and_simulate(split):
 
 
 def load_dataset(split):
-    """Dataset and merged GNSS + LEO measurements of every fusion epoch of 'train' or 'test'."""
+    """Dataset and {LEO filter orbit: merged GNSS + LEO measurements of every fusion epoch} of 'train' or 'test'."""
     data, gnss, leo, range_errors = read_and_simulate(split)
     return data, prepare_measurements(split, gnss, leo, range_errors)

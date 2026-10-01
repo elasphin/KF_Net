@@ -21,7 +21,7 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `read_dataset.py` | Finds the dataset folders under that path (or downloads the needed files) and reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
 | `earth_models.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4) |
 | `gnss_measurements.py` | Satellite positions/clocks and the pseudorange model of Eq. (1) |
-| `leo_satellites.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; SGP4 prediction), the LEO pseudorange simulation, Eq. (1), (5), and the orbit error variance of the filter |
+| `leo_satellites.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5), and the orbit error variance of the filter |
 | `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_satellites.py`) |
 | `data_cache.py` | Reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
 | `numba_kernels.py` | Compiled copies (Numba) of the INS mechanization loop and the LEO force model, same arithmetic |
@@ -67,10 +67,16 @@ In Colab, first get the code: `!git clone https://github.com/elasphin/KF_Net.git
 ```bash
 pip install -r requirements.txt
 python train.py         # outputs/masked_cla_network.pt (best validation model), training_history.json, training_info.json,
-                        #         leo_orbit_error_train.json (orbit error of the LEO prediction, used in R)
-python test.py          # outputs/test_summary.json, test_epochs.csv, leo_orbit_error_test.json
-python show_results.py  # outputs/results_training.png, results_errors.png, results_cdf.png, results_stanford.png, results_table.txt
+                        #         leo_orbit_error_train.json (orbit error of the training LEO orbit, used in R)
+python test.py          # outputs/test_summary.json, test_epochs.csv, leo_orbit_error_test.json (one entry per LEO orbit)
+python show_results.py  # outputs/results_training.png, results_orbits.png, results_table.txt and, per LEO orbit,
+                        #         results_errors_<orbit>.png, results_cdf_<orbit>.png, results_stanford_<orbit>.png
 ```
+
+LEO orbit of the filter (ASSUMPTIONS.md A26): the network is trained once with `LEO_TRAIN_ORBIT` (`'reference'`, the
+true orbit) and `test.py` runs it and the traditional EKF with every orbit of `LEO_TEST_ORBITS` on the same
+measurements and the same R: `'reference'` (upper bound), `'tle'` (SGP4 of the TLE available before the dataset) and,
+once `leo_satellites.network_orbit` is written, `'network'` (neural-network orbit prediction).
 
 The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`: `My Drive/KF_Net_outputs` in Colab
 (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next to the code on my computer.

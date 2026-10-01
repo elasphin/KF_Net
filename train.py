@@ -11,7 +11,8 @@ Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
 epoch the filter part theta (LSTM, attention, FC) is updated with the encoder
 psi (masked CNN) frozen, then psi is updated with theta frozen; one Adam step
 each (A15), gradient norm clipped to 1 (A22). The first 80 % of the training
-dataset trains the network, the last 20 % validates it (A21).
+dataset trains the network, the last 20 % validates it (A21). The filter uses
+the LEO orbit settings.LEO_TRAIN_ORBIT (A26; the true orbit by default).
 """
 import json
 import time
@@ -44,7 +45,8 @@ def main():
     torch.manual_seed(cfg.RANDOM_SEED)
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
     start_time = time.time()
-    data, measurements = load_dataset('train')
+    data, orbits = load_dataset('train')
+    measurements = orbits[cfg.LEO_TRAIN_ORBIT]
     last = len(data.fusion_times) - 1
     split = int(round(last * (1.0 - cfg.VALIDATION_FRACTION)))       # train: 0..split, validation: split..last
     max_measurements = max(len(m) for m in measurements[:split + 1])  # N_max of Eq. (16)
@@ -59,7 +61,8 @@ def main():
     filter_optimizer = torch.optim.Adam(filter_part, lr=cfg.LEARNING_RATE)
 
     info = {
-        'dataset': data.name, 'training_samples': split, 'validation_samples': last - split,
+        'dataset': data.name, 'leo_train_orbit': cfg.LEO_TRAIN_ORBIT,
+        'training_samples': split, 'validation_samples': last - split,
         'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS,
         'early_stopping_patience': cfg.EARLY_STOPPING_PATIENCE, 'l2_weight': cfg.L2_WEIGHT,
         'backprop_window': cfg.BACKPROP_WINDOW, 'gradient_clip_norm': cfg.GRADIENT_CLIP_NORM, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
@@ -87,7 +90,8 @@ def main():
             best_loss, epochs_without_improvement = validation['loss'], 0
             info.update(best_epoch=epoch, best_validation_loss=validation['loss'],
                         best_validation_position_rmse_m=validation['position_rmse_m'])
-            torch.save({'state_dict': network.state_dict(), 'max_measurements': max_measurements}, CHECKPOINT_FILE)
+            torch.save({'state_dict': network.state_dict(), 'max_measurements': max_measurements,
+                        'leo_train_orbit': cfg.LEO_TRAIN_ORBIT}, CHECKPOINT_FILE)
         else:
             epochs_without_improvement += 1
         info.update(epochs_run=epoch, training_time_s=time.time() - start_time)

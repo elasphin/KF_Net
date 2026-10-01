@@ -78,7 +78,7 @@ DLL_BANDWIDTH = 2.0                # Hz                                         
 DLL_CORRELATOR_SPACING = 0.1       # chip                                         [ref 35]
 DLL_INTEGRATION_TIME = 0.02        # s                                            [ref 35]
 
-# --- LEO signals of opportunity (paper Sec. II-A; ASSUMPTIONS.md A1-A4, A24, A25) ---
+# --- LEO signals of opportunity (paper Sec. II-A; ASSUMPTIONS.md A1-A4, A24-A26) ---
 LEO_TLE_FOLDER_NAME = 'LEO_TLE'    # TLE files (*.txt) of the LEO satellites, inside the dataset folder [choice A1]
 LEO_TLE_MIN_AGE = 0.0              # h, predictor uses the latest TLE published this long before the start [choice A1]
 LEO_MAX_TLE_MISMATCH = 10e3        # m, predictor vs reference TLE at the reference epoch; larger = manoeuvre,
@@ -91,6 +91,12 @@ LEO_ELEVATION_MASK_DEG = 10.0      # deg                                        
 LEO_ELEVATION_BIN_DEG = 10.0       # deg, bins for MP/NLOS shape and mean C/N0     [choice A3]
 LEO_CODE_CHIP_RATE = 1.023e6       # chip/s, used by the receiver-noise term      [choice A3]
 LEO_NOISE_SEED = {'train': 1, 'test': 2}
+# LEO orbit used by the filter (A26): 'reference' = true orbit (the one the measurements are made with),
+# 'tle' = SGP4 of the predictor TLE, 'network' = leo_satellites.network_orbit (orbit predicted by a neural
+# network, to be written). The network is trained once with LEO_TRAIN_ORBIT and tested with every orbit of
+# LEO_TEST_ORBITS on the same measurements; R is the same in all of them (orbit variance of LEO_TRAIN_ORBIT, A25).
+LEO_TRAIN_ORBIT = 'reference'                       # [choice A26]
+LEO_TEST_ORBITS = ('reference', 'tle')              # add 'network' when network_orbit exists    [choice A26]
 
 # --- Masked CLA network (paper Table III, Fig. 8) ----------------------------
 CONV_FILTERS = 24                  # [paper Table III]

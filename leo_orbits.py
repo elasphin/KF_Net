@@ -163,15 +163,26 @@ def sgp4_orbit(tle, times):
     return position, velocity
 
 
+def force_model():
+    """(equations of motion, extra arguments) of settings.LEO_FORCE_MODEL: the Python function or its compiled copy."""
+    if cfg.LEO_FORCE_MODEL == 'python':
+        return equations_of_motion, None
+    if cfg.LEO_FORCE_MODEL == 'numba':
+        from numba_kernels import leo_equations_of_motion
+        return leo_equations_of_motion, (GRAVITY_C, GRAVITY_S)
+    raise ValueError(f"LEO_FORCE_MODEL must be 'python' or 'numba', not {cfg.LEO_FORCE_MODEL!r}")
+
+
 def reference_orbit(tle, times):
     """Numerical ECEF position and velocity at GPST times (ascending), from the SGP4 state at the TLE epoch."""
     epoch = tle_epoch(tle)
     _, r, v = tle.sgp4(tle.jdsatepoch, tle.jdsatepochF)
     states = np.empty((len(times), 6))
+    equations, arguments = force_model()
     for t_eval in (times[times < epoch][::-1], times[times >= epoch]):   # backward and forward from the epoch
         if len(t_eval):
-            solution = solve_ivp(equations_of_motion, (epoch, t_eval[-1]), np.array(r + v) * 1e3,
-                                 method='DOP853', t_eval=t_eval, **INTEGRATION_TOLERANCE)
+            solution = solve_ivp(equations, (epoch, t_eval[-1]), np.array(r + v) * 1e3, method='DOP853',
+                                 t_eval=t_eval, args=arguments, **INTEGRATION_TOLERANCE)
             states[np.searchsorted(times, t_eval)] = solution.y.T
     return teme_to_ecef(times, states[:, :3], states[:, 3:])
 

@@ -82,3 +82,8 @@ FALSE_ALARM_PROBABILITY = 1e-3     # alpha of the chi-square test               
 HORIZONTAL_PL_FACTOR = 6.0         # K_H                                          [choice A17]
 VERTICAL_PL_FACTOR = 5.33          # K_V                                          [choice A17]
 ALERT_LIMIT = 30.0                 # m, Stanford diagrams                         [paper Fig. 20]
+
+# --- Run time only (the results do not change; README.md "Run time") --------
+INS_MECHANIZATION = 'numba'        # 'python' (ins_filter.mechanize loop) or 'numba' (same arithmetic, compiled)
+LEO_FORCE_MODEL = 'numba'          # 'python' (leo_orbits.equations_of_motion) or 'numba' (same, compiled)
+DATA_CACHE = True                  # keep the read dataset and the simulated measurements in OUTPUT_FOLDER/cache

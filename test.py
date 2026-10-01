@@ -10,11 +10,11 @@ import numpy as np
 import torch
 
 import settings as cfg
+from data_cache import load_dataset
 from earth_models import ecef_to_llh, ecef_to_ned_matrix
 from fault_detection import stanford_percentages
 from masked_cla_network import MaskedCLANetwork
-from navigation_filter import prepare_measurements, run_filter
-from read_dataset import load_navigation_data
+from navigation_filter import run_filter
 from train import CHECKPOINT_FILE
 
 
@@ -38,8 +38,7 @@ def main():
     network = MaskedCLANetwork(checkpoint['max_measurements'])
     network.load_state_dict(checkpoint['state_dict'])
 
-    data = load_navigation_data('test')
-    measurements = prepare_measurements(data, 'test')
+    data, measurements = load_dataset('test')
     results = {'masked_cla_kalmannet': run_filter(data, measurements, network),
                'traditional_ekf': run_filter(data, measurements, max_measurements=network.max_measurements)}
 

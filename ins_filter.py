@@ -65,12 +65,25 @@ def propagate_ins(state, data, start_time, end_time):
     """
     first = np.searchsorted(data.imu_times, start_time, side='right')
     last = np.searchsorted(data.imu_times, end_time, side='right')      # samples [first, last) are <= end_time
-    time = start_time
-    for i in range(first, last):
-        state = mechanize(state, data.gyro[i], data.accel[i], data.imu_times[i] - time)
-        time = data.imu_times[i]
-    if end_time > time:                                                 # partial step up to the GNSS epoch
-        state = mechanize(state, data.gyro[last], data.accel[last], end_time - time)
+    if cfg.INS_MECHANIZATION == 'python':
+        time = start_time
+        for i in range(first, last):
+            state = mechanize(state, data.gyro[i], data.accel[i], data.imu_times[i] - time)
+            time = data.imu_times[i]
+        if end_time > time:                                             # partial step up to the GNSS epoch
+            state = mechanize(state, data.gyro[last], data.accel[last], end_time - time)
+    elif cfg.INS_MECHANIZATION == 'numba':                              # the same steps, compiled
+        from numba_kernels import propagate_ins_samples
+        index, steps = np.arange(first, last), np.diff(data.imu_times[first:last], prepend=start_time)
+        time = data.imu_times[last - 1] if last > first else start_time
+        if end_time > time:
+            index, steps = np.append(index, last), np.append(steps, end_time - time)
+        position, velocity, attitude = propagate_ins_samples(
+            state.position, state.velocity, state.attitude, state.accel_bias, state.gyro_bias,
+            data.gyro[index], data.accel[index], steps)
+        state = NavigationState(position, velocity, attitude, state.accel_bias, state.gyro_bias)
+    else:
+        raise ValueError(f"INS_MECHANIZATION must be 'python' or 'numba', not {cfg.INS_MECHANIZATION!r}")
     samples = slice(first, last + 1)
     return state, data.accel[samples].mean(axis=0), data.accel[last], data.gyro[last]
 
@@ -92,10 +105,14 @@ def error_matrix(state: NavigationState, specific_force):
 
 
 def transition_matrix(F, dt):
-    """Phi = sum F^n dt^n / n! = expm(F dt), Ref. [38] Eq. (4); Qd by the trapezoidal rule (A20)."""
-    Phi = expm(F * dt)
+    """Phi = sum F^n dt^n / n! = expm(F dt), Ref. [38] Eq. (4)."""
+    return expm(F * dt)
+
+
+def process_noise(Phi, dt):
+    """Qd by the trapezoidal rule (A20)."""
     Q = noise_density()
-    return Phi, 0.5 * (Phi @ Q @ Phi.T + Q) * dt
+    return 0.5 * (Phi @ Q @ Phi.T + Q) * dt
 
 
 # --- Measurement model -------------------------------------------------------

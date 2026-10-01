@@ -3,15 +3,18 @@
 State (paper Eq. (7)): x = [dp, dv, dtheta, b_a, b_g], error = truth - estimate,
 C_true = Exp(dtheta) C_estimate. System matrix F from paper Ref. [38] Eq. (3)
 (clock rows removed, because Eq. (7) has no clock state).
+The *_numba function is a Numba-compiled copy of the Python function that follows it (see earth_models.py).
 """
 from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
+from numba import njit
 from scipy.linalg import expm
 
 import settings as cfg
-from earth_models import EARTH_ROTATION_VECTOR, gravity, rotation_matrix_to_vector, rotation_vector_to_matrix, skew
+from earth_models import (EARTH_ROTATION_RATE, EARTH_ROTATION_VECTOR, gravity, gravity_numba, rotation_matrix_to_vector,
+                          rotation_vector_to_matrix, rotation_vector_to_matrix_numba, skew, skew_numba)
 from gnss_measurements import SYSTEM_ORDER, EpochMeasurements, predict_pseudoranges
 
 STATE_SIZE = 15
@@ -43,6 +46,26 @@ def noise_density():
 
 
 # --- INS mechanization -------------------------------------------------------
+@njit(cache=True)
+def mechanize_samples_numba(position, velocity, attitude, accel_bias, gyro_bias, gyro, accel, steps):
+    """mechanize for every row of gyro, accel with the time steps 'steps' -> position, velocity, attitude."""
+    earth_rotation = np.array([0.0, 0.0, EARTH_ROTATION_RATE])
+    earth_skew = skew_numba(earth_rotation)
+    r, v, C = position.copy(), velocity.copy(), attitude.copy()
+    for i in range(steps.shape[0]):
+        dt = steps[i]
+        angular_rate = gyro[i] - gyro_bias
+        specific_force = accel[i] - accel_bias
+        new_C = (rotation_vector_to_matrix_numba(-earth_rotation * dt) @ C
+                 @ rotation_vector_to_matrix_numba(angular_rate * dt))
+        acceleration = (0.5 * (C + new_C) @ specific_force + gravity_numba(r)
+                        - earth_skew @ earth_skew @ r - 2.0 * earth_skew @ v)
+        new_v = v + acceleration * dt
+        r = r + 0.5 * (v + new_v) * dt
+        v, C = new_v, new_C
+    return r, v, C
+
+
 def mechanize(state: NavigationState, gyro, accel, dt) -> NavigationState:
     """ECEF strapdown step with bias compensation (paper Eq. (8), S = M = 0, see A8)."""
     angular_rate = gyro - state.gyro_bias
@@ -73,12 +96,11 @@ def propagate_ins(state, data, start_time, end_time):
         if end_time > time:                                             # partial step up to the GNSS epoch
             state = mechanize(state, data.gyro[last], data.accel[last], end_time - time)
     elif cfg.INS_MECHANIZATION == 'numba':                              # the same steps, compiled
-        from numba_kernels import propagate_ins_samples
         index, steps = np.arange(first, last), np.diff(data.imu_times[first:last], prepend=start_time)
         time = data.imu_times[last - 1] if last > first else start_time
         if end_time > time:
             index, steps = np.append(index, last), np.append(steps, end_time - time)
-        position, velocity, attitude = propagate_ins_samples(
+        position, velocity, attitude = mechanize_samples_numba(
             state.position, state.velocity, state.attitude, state.accel_bias, state.gyro_bias,
             data.gyro[index], data.accel[index], steps)
         state = NavigationState(position, velocity, attitude, state.accel_bias, state.gyro_bias)

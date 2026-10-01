@@ -1,11 +1,21 @@
 """Constants, rotations, frames, gravity and the GNSS error models of Eq. (3)-(4).
 
 Array functions accept one value or an array of values (vectorized with numpy).
+
+Functions named *_numba are Numba-compiled copies of the Python function that follows them (settings
+INS_MECHANIZATION and LEO_FORCE_MODEL = 'numba'). Each repeats the arithmetic of its Python original
+operation by operation and in the same order, so both give the same numbers; only the Python interpreter
+overhead is removed. They take one value (no vectorization). The first call compiles them (a few seconds);
+cache=True keeps the compiled code in __pycache__ for the next runs.
 """
 import math
 from datetime import datetime, timezone
 
 import numpy as np
+from llvmlite import ir
+from numba import njit, types
+from numba.core import cgutils
+from numba.extending import intrinsic
 
 import settings as cfg
 
@@ -25,6 +35,28 @@ BDS_B1I_CHIP_RATE = 2.046e6
 EARTH_ROTATION_VECTOR = np.array([0.0, 0.0, EARTH_ROTATION_RATE])
 
 
+# --- Numba: the same operations as numpy -------------------------------------
+@intrinsic
+def power(typingctx, x, y):
+    """x ** y with the C library pow(), as Python and numpy compute it.
+
+    Numba would replace x ** 2 by x * x, which differs from pow(x, 2) in the last bit for ~0.1 % of
+    the values; 'nobuiltin' keeps the call to pow().
+    """
+    def codegen(context, builder, signature, args):
+        double = ir.DoubleType()
+        function = cgutils.get_or_insert_function(builder.module, ir.FunctionType(double, [double, double]), 'pow')
+        function.attributes.add('nobuiltin')
+        return builder.call(function, args)
+    return types.float64(types.float64, types.float64), codegen
+
+
+@njit(cache=True)
+def norm(v):
+    """Vector norm as numpy.linalg.norm computes it: sqrt(v . v) with the BLAS dot product."""
+    return np.sqrt(np.dot(v, v))
+
+
 # --- Time --------------------------------------------------------------------
 def gps_seconds(year, month, day, hour, minute, second, time_system='GPS'):
     """Calendar date -> seconds since the GPS epoch (GPST)."""
@@ -38,6 +70,14 @@ def gps_seconds(year, month, day, hour, minute, second, time_system='GPS'):
     return seconds
 
 
+@njit(cache=True)
+def earth_rotation_angle_numba(gps_time):
+    """earth_rotation_angle."""
+    julian_date_utc = 2444244.5 + (gps_time - GPS_UTC_LEAP_SECONDS) / 86400.0
+    degrees = 280.46061837 + 360.98564736629 * (julian_date_utc - 2451545.0)
+    return np.deg2rad(degrees % 360.0)
+
+
 def earth_rotation_angle(gps_time):
     """Greenwich mean sidereal angle [rad] (rotation of the TEME LEO orbits to ECEF, UT1 = UTC)."""
     julian_date_utc = 2444244.5 + (np.asarray(gps_time) - GPS_UTC_LEAP_SECONDS) / 86400.0
@@ -46,9 +86,25 @@ def earth_rotation_angle(gps_time):
 
 
 # --- Rotations ---------------------------------------------------------------
+@njit(cache=True)
+def skew_numba(v):
+    """skew."""
+    return np.array([[0.0, -v[2], v[1]], [v[2], 0.0, -v[0]], [-v[1], v[0], 0.0]])
+
+
 def skew(v):
     x, y, z = v
     return np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
+
+
+@njit(cache=True)
+def rotation_vector_to_matrix_numba(v):
+    """rotation_vector_to_matrix."""
+    angle = norm(v)
+    K = skew_numba(v)
+    if angle < 1e-8:
+        return np.eye(3) + K + 0.5 * K @ K
+    return np.eye(3) + math.sin(angle) / angle * K + (1.0 - math.cos(angle)) / power(angle, 2.0) * K @ K
 
 
 def rotation_vector_to_matrix(v):
@@ -97,6 +153,18 @@ def elevation_azimuth(receiver, satellites):
     ned = (np.asarray(satellites) - receiver) @ ecef_to_ned_matrix(latitude, longitude).T
     ned /= np.linalg.norm(ned, axis=1, keepdims=True)
     return np.arcsin(-ned[:, 2]), np.arctan2(ned[:, 1], ned[:, 0]) % (2.0 * np.pi)
+
+
+@njit(cache=True)
+def gravity_numba(position):
+    """gravity."""
+    x, y, z = position[0], position[1], position[2]
+    r = norm(position)
+    j2 = 1.5 * EARTH_J2 * power(WGS84_A / r, 2.0)
+    ratio = 5.0 * z * z / (r * r)
+    return -EARTH_GM / power(r, 3.0) * np.array([x * (1.0 - j2 * (ratio - 1.0)),
+                                             y * (1.0 - j2 * (ratio - 1.0)),
+                                             z * (1.0 - j2 * (ratio - 3.0))])
 
 
 def gravity(position):

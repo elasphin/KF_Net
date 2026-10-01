@@ -32,7 +32,7 @@ def summarize(result):
         'stanford_horizontal_percent': stanford_percentages(np.hypot(ned[:, 0], ned[:, 1]), result['horizontal_pl']),
         'stanford_vertical_percent': stanford_percentages(np.abs(ned[:, 2]), result['vertical_pl']),
         'epochs_with_fault': sum(1 for s in result['faulty_satellite'] if s),
-        'epochs_with_leo_fault': sum(1 for s in result['faulty_satellite'] if s.startswith('L')),
+        'epochs_with_leo_fault': sum(1 for s in result['faulty_satellite'] if 'L' in s),   # LEO ids: L + NORAD number
         'epochs': len(ned),
     }
 

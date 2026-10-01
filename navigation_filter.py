@@ -3,7 +3,8 @@
 One function runs the filter for training, validation and test, so the network
 always sees the same filter. One fusion epoch k: INS propagation ->
 measurements -> Kalman gain -> fault detection on the INS-predicted innovation
-(Eq. (33)) -> state update, with Eq. (34) adaptation when a fault is identified.
+(Eq. (33)) -> state update, with Eq. (34) adaptation when faults are identified
+(the test is repeated after each identified fault, A27).
 
 Fault detection, identification and adaptation (paper Sec. II-D, Ref. [33]) and
 integrity: the test runs on the innovation predicted by the INS, before the
@@ -21,33 +22,53 @@ from ins_filter import (STATE_SIZE, apply_correction, classical_gain, error_matr
                         transition_matrix, truth_state)
 from masked_cla_network import build_network_input
 
+PARALLEL_TOLERANCE = 1e-9     # relative: c_i parallel to an identified fault, or already explained by it
+
 
 # --- Fault detection and integrity (paper Sec. II-D, Ref. [33]) --------------
-def detect_fault(innovation, H, R, P_prior):
-    """Paper Eq. (33): T = nu^T Q^+ nu with Q = H P H^T + R; fault if T > chi2(1 - alpha, rank Q)."""
+def find_faults(innovation, H, R, P_prior, projector):
+    """Fault detection and identification, repeated after each identified fault (A27).
+
+    Paper Eq. (33) / Ref. [33] Eq. (6): T = nu^T M nu > chi2(1 - alpha, rank Q - q), Q = H P H^T + R,
+    with M = Q^+ (I - C C^+) the metric after the q faults already found (columns of C, C^+ of
+    Ref. [33] Eq. (39)); M = Q^+ when q = 0. Ref. [33] Eq. (7): the next fault is the row with the
+    largest T_i = (c_i^T M nu)^2 / (c_i^T M c_i), c_i = projector column i (pseudorange fault seen in
+    the clock-free innovation). Rows with c_i parallel to that of the identified row are the same
+    hypothesis of Ref. [33] (two rows of one GNSS system) and are named with it.
+    Returns (identified rows, [rows of each identified hypothesis], Q^+).
+    """
     Q = H @ P_prior @ H.T + R
     Q_inverse = np.linalg.pinv(Q, hermitian=True)
-    statistic = innovation @ Q_inverse @ innovation
-    threshold = chi2.ppf(1.0 - cfg.FALSE_ALARM_PROBABILITY, np.linalg.matrix_rank(Q, hermitian=True))
-    return statistic > threshold, Q_inverse
-
-
-def identify_fault(innovation, projector, Q_inverse):
-    """Ref. [33] Eq. (6)-(7): the pseudorange with the largest T_i = (c_i^T Q^+ nu)^2 / (c_i^T Q^+ c_i)."""
+    redundancy = np.linalg.matrix_rank(Q, hermitian=True)
     c = projector
-    return int(np.argmax((c.T @ Q_inverse @ innovation) ** 2 / np.einsum('ji,jk,ki->i', c, Q_inverse, c)))
+    norm_without_faults = np.einsum('ji,jk,ki->i', c, Q_inverse, c)
+    faulty, hypotheses = [], []
+    while len(faulty) < redundancy:
+        C = c[:, faulty]
+        M = Q_inverse - Q_inverse @ C @ np.linalg.solve(C.T @ Q_inverse @ C, C.T @ Q_inverse)
+        threshold = chi2.ppf(1.0 - cfg.FALSE_ALARM_PROBABILITY, redundancy - len(faulty))
+        if innovation @ M @ innovation <= threshold:
+            break
+        norm = np.einsum('ji,jk,ki->i', c, M, c)
+        testable = norm > PARALLEL_TOLERANCE * norm_without_faults        # not yet explained by the faults found
+        T = np.where(testable, (c.T @ M @ innovation) ** 2 / np.where(testable, norm, 1.0), -np.inf)
+        index = int(np.argmax(T))
+        parallel = (c.T @ M @ c[:, index]) ** 2 >= (1.0 - PARALLEL_TOLERANCE) * norm * norm[index]
+        faulty.append(index)
+        hypotheses.append(np.flatnonzero(testable & parallel))
+    return faulty, hypotheses, Q_inverse
 
 
-def adapt_to_fault(dx, P_prior, K, H, R, innovation, projector, index, Q_inverse):
-    """Paper Eq. (34): x_i = x_0 - L_i nu, L_i = K c_i c_i^+ (Ref. [33] Eq. (39)).
+def adapt_to_faults(dx, P_prior, K, H, R, innovation, projector, faulty, Q_inverse):
+    """Paper Eq. (34): x_i = x_0 - L_i nu, L_i = K C_i C_i^+ (Ref. [33] Eq. (39)).
 
+    C_i: projector columns of the faulty rows (one column per fault, Ref. [33] allows q_i >= 1).
     x_i is the update with the gain K - L_i, so P_i is the Joseph covariance of that gain. For the
     EKF gain it equals P_0 + L_i Q L_i^T of Eq. (34); that form assumes the optimal gain, so it
     does not hold for the network gain.
     """
-    c = projector[:, [index]]
-    c_plus = (c.T @ Q_inverse) / (c.T @ Q_inverse @ c)
-    L = K @ c @ c_plus
+    C = projector[:, faulty]
+    L = K @ C @ np.linalg.solve(C.T @ Q_inverse @ C, C.T @ Q_inverse)
     return dx - L @ innovation, joseph_covariance(P_prior, K - L, H, R)
 
 
@@ -130,11 +151,10 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
             if covariance:
                 P_posterior = joseph_covariance(P, K, H, R)
                 if fault_detection:
-                    detected, Q_inverse = detect_fault(nu, H, R, P)
-                    if detected:
-                        index = identify_fault(nu, model.projector, Q_inverse)
-                        dx, P_posterior = adapt_to_fault(dx, P, K, H, R, nu, model.projector, index, Q_inverse)
-                        faulty_satellite = model.measurements.sat_ids[index]
+                    faulty, hypotheses, Q_inverse = find_faults(nu, H, R, P, model.projector)
+                    if faulty:
+                        dx, P_posterior = adapt_to_faults(dx, P, K, H, R, nu, model.projector, faulty, Q_inverse)
+                        faulty_satellite = ' '.join('/'.join(model.measurements.sat_ids[h]) for h in hypotheses)
                 P = P_posterior
             gain_square_sum += np.sum(K ** 2, axis=1)
             gain_columns += count

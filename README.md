@@ -26,7 +26,7 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `data_cache.py` | Reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
 | `ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
 | `masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
-| `navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test, with fault detection Eq. (33), identification, DIA Eq. (34) and protection levels |
+| `navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
 | `train.py` | Offline training with validation, Eq. (30)-(32) |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
 | `show_results.py` | Figures and table as in the paper: train/validation loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size |

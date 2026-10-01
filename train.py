@@ -5,7 +5,7 @@
 
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
-averaged over the epochs plus
+averaged over the epochs and the three components (MSE, Table III) plus
 gamma ||Theta||^2 (Eq. (32)); Adam with learning rate 0.01 (Table III).
 Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
 epoch the filter part theta (LSTM, attention, FC) is updated with the encoder

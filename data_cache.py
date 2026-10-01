@@ -19,14 +19,12 @@ from pathlib import Path
 
 import settings as cfg
 from gnss_measurements import merge_measurements, prepare_gnss_measurements
-from kaggle_download import find_dataset_folder
-from leo_orbits import find_tle_folder
-from leo_simulation import orbit_error_variance, real_error_bins, simulate_leo_measurements
-from read_dataset import load_navigation_data
+from leo_satellites import find_tle_folder, orbit_error_variance, real_error_bins, simulate_leo_measurements
+from read_dataset import find_dataset_folder, load_navigation_data
 
 CODE_FOLDER = Path(__file__).resolve().parent
-DATA_CODE = ('read_dataset.py', 'kaggle_download.py', 'earth_models.py', 'gnss_measurements.py', 'leo_orbits.py',
-             'leo_simulation.py', 'numba_kernels.py', 'egm96_degree20.txt', 'data_cache.py')
+DATA_CODE = ('read_dataset.py', 'earth_models.py', 'gnss_measurements.py', 'leo_satellites.py', 'numba_kernels.py',
+             'egm96_degree20.txt', 'data_cache.py')
 NOT_DATA_SETTINGS = {
     'CONV_FILTERS', 'CONV_KERNEL_SIZE', 'POOL_KERNEL_SIZE', 'LSTM_UNITS', 'LSTM_LAYERS', 'LSTM_DROPOUT',
     'FC_HIDDEN_UNITS', 'MASK_EPSILON', 'RANDOM_SEED', 'LEARNING_RATE', 'TRAINING_EPOCHS', 'L2_WEIGHT',
@@ -34,6 +32,8 @@ NOT_DATA_SETTINGS = {
     'FALSE_ALARM_PROBABILITY', 'HORIZONTAL_PL_FACTOR', 'VERTICAL_PL_FACTOR', 'ALERT_LIMIT',
     'INS_MECHANIZATION', 'DATA_CACHE',
     'TRAIN_FOLDER_NAME', 'TEST_FOLDER_NAME',      # the folder of the split is in the key itself
+    'PROJECT_FOLDER', 'COLAB_FOLDER', 'COLAB_OUTPUT_FOLDER', 'KAGGLE_FOLDER', 'KAGGLE_OUTPUT_FOLDER', 'LOCAL_FOLDER',
+    'LOCAL_OUTPUT_FOLDER',                        # candidates of DATASET_FOLDER / OUTPUT_FOLDER (these are in the key)
 }
 
 

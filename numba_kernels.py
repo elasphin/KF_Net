@@ -3,7 +3,7 @@
 Each function repeats the arithmetic of its Python original operation by operation and in the same
 order, so both versions give the same numbers; only the Python interpreter overhead is removed:
     propagate_ins_samples    <-  ins_filter.mechanize, applied to every IMU sample of propagate_ins
-    leo_equations_of_motion  <-  leo_orbits.equations_of_motion (EGM96 gravity, Sun and Moon)
+    leo_equations_of_motion  <-  leo_satellites.equations_of_motion (EGM96 gravity, Sun and Moon)
 The first call compiles the functions (a few seconds); cache=True keeps the compiled code in
 __pycache__ for the next runs.
 """
@@ -16,7 +16,7 @@ from numba.core import cgutils
 from numba.extending import intrinsic
 
 from earth_models import EARTH_GM, EARTH_J2, EARTH_ROTATION_RATE, GPS_UTC_LEAP_SECONDS, WGS84_A
-from leo_orbits import ASTRONOMICAL_UNIT, EGM96_GM, EGM96_RADIUS, GPS_EPOCH_JULIAN_DATE, MOON_GM, SUN_GM
+from leo_satellites import ASTRONOMICAL_UNIT, EGM96_GM, EGM96_RADIUS, GPS_EPOCH_JULIAN_DATE, MOON_GM, SUN_GM
 
 
 # --- Same operations as numpy ------------------------------------------------
@@ -87,7 +87,7 @@ def propagate_ins_samples(position, velocity, attitude, accel_bias, gyro_bias, g
     return r, v, C
 
 
-# --- LEO reference orbit (leo_orbits.py) -------------------------------------
+# --- LEO reference orbit (leo_satellites.py) ---------------------------------
 @njit(cache=True)
 def earth_rotation_angle(gps_time):
     """earth_models.earth_rotation_angle."""
@@ -98,7 +98,7 @@ def earth_rotation_angle(gps_time):
 
 @njit(cache=True)
 def gravity_acceleration(r, C, S):
-    """leo_orbits.gravity_acceleration with the coefficients C, S (leo_orbits.GRAVITY_C, GRAVITY_S)."""
+    """leo_satellites.gravity_acceleration with the coefficients C, S (leo_satellites.GRAVITY_C, GRAVITY_S)."""
     n_max = C.shape[0] - 1
     r2 = r @ r
     rho = power(EGM96_RADIUS, 2.0) / r2
@@ -134,7 +134,7 @@ def gravity_acceleration(r, C, S):
 
 @njit(cache=True)
 def sun_moon_positions(gps_time):
-    """leo_orbits.sun_moon_positions."""
+    """leo_satellites.sun_moon_positions."""
     days = (gps_time - GPS_UTC_LEAP_SECONDS) / 86400.0
     whole = np.floor(days)
     whole, fraction = GPS_EPOCH_JULIAN_DATE + whole, days - whole
@@ -169,7 +169,7 @@ def third_body_acceleration(r, body, gm):
 
 @njit(cache=True)
 def leo_equations_of_motion(gps_time, state, C, S):
-    """leo_orbits.equations_of_motion: d[r, v]/dt in TEME, gravity coefficients C, S."""
+    """leo_satellites.equations_of_motion: d[r, v]/dt in TEME, gravity coefficients C, S."""
     r = state[:3]
     angle = earth_rotation_angle(gps_time)
     c, s = np.cos(angle), np.sin(angle)

@@ -9,7 +9,7 @@ from pathlib import Path
 COLAB_FOLDER = Path('/content/drive/MyDrive/SmartPNT-POS')
 
 # Kaggle: notebook with https://www.kaggle.com/datasets/fengzhusgg/smartpnt-pos attached ("Add Input")
-KAGGLE_FOLDER = Path('/kaggle/input/smartpnt-pos')
+KAGGLE_FOLDER = Path('/kaggle/input/datasets/fengzhusgg/smartpnt-pos')
 
 # My computer: the Dataset folder next to this file
 LOCAL_FOLDER = Path(__file__).resolve().parent / 'Dataset'

@@ -24,8 +24,8 @@ from leo_satellites import find_tle_folder, orbit_error_variance, real_error_bin
 from read_dataset import find_dataset_folder, load_navigation_data
 
 CODE_FOLDER = Path(__file__).resolve().parent
-DATA_CODE = ('read_dataset.py', 'earth_models.py', 'gnss_measurements.py', 'leo_satellites.py', 'numba_kernels.py',
-             'egm96_degree20.txt', 'data_cache.py')
+DATA_CODE = ('read_dataset.py', 'earth_models.py', 'gnss_measurements.py', 'leo_satellites.py', 'egm96_degree20.txt',
+             'data_cache.py')
 NOT_DATA_SETTINGS = {
     'CONV_FILTERS', 'CONV_KERNEL_SIZE', 'POOL_KERNEL_SIZE', 'LSTM_UNITS', 'LSTM_LAYERS', 'LSTM_DROPOUT',
     'FC_HIDDEN_UNITS', 'MASK_EPSILON', 'RANDOM_SEED', 'LEARNING_RATE', 'TRAINING_EPOCHS', 'L2_WEIGHT',

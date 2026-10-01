@@ -24,7 +24,6 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `leo_satellites.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5), and the orbit error variance of the filter |
 | `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_satellites.py`) |
 | `data_cache.py` | Reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
-| `numba_kernels.py` | Compiled copies (Numba) of the INS mechanization loop and the LEO force model, same arithmetic |
 | `ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
 | `masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
 | `navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test, with fault detection Eq. (33), identification, DIA Eq. (34) and protection levels |
@@ -90,8 +89,8 @@ for bit against the Python versions):
 
 | Setting | Values | What it does |
 |---|---|---|
-| `INS_MECHANIZATION` | `'numba'` (default) or `'python'` | INS mechanization of every IMU sample (`ins_filter.propagate_ins`): the Python loop of `mechanize`, or the same operations compiled with Numba (`numba_kernels.propagate_ins_samples`), ~16x faster |
-| `LEO_FORCE_MODEL` | `'numba'` (default) or `'python'` | Equations of motion of the LEO reference orbit (EGM96 20x20, Sun, Moon) integrated by DOP853: `leo_satellites.equations_of_motion` or its compiled copy `numba_kernels.leo_equations_of_motion`, ~70x faster |
+| `INS_MECHANIZATION` | `'numba'` (default) or `'python'` | INS mechanization of every IMU sample (`ins_filter.propagate_ins`): the Python loop of `mechanize`, or the same operations compiled with Numba (`ins_filter.mechanize_samples_numba`), ~16x faster |
+| `LEO_FORCE_MODEL` | `'numba'` (default) or `'python'` | Equations of motion of the LEO reference orbit (EGM96 20x20, Sun, Moon) integrated by DOP853: `leo_satellites.equations_of_motion` or its compiled copy `leo_satellites.equations_of_motion_numba`, ~70x faster |
 | `DATA_CACHE` | `True` (default) or `False` | Keeps the read dataset and the simulated measurements in `OUTPUT_FOLDER/cache` (one file per split); later runs read that file. A new file is made when a setting that changes the data, the code that makes it or an input file (dataset, products, TLE) changes; network, training and integrity settings do not count. Delete the folder to force a new one. |
 
 The Numba versions compile on the first run (a few seconds) and keep the compiled code in `__pycache__`.

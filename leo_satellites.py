@@ -41,18 +41,22 @@ Measurements:
   training filter orbit on the training dataset, saved in
   leo_orbit_error_train.json (zero for the reference orbit), used in R of every
   test orbit.
+The *_numba functions are Numba-compiled copies of the Python function that follows each of them
+(setting LEO_FORCE_MODEL = 'numba', see earth_models.py).
 """
 import json
 from math import factorial
 from pathlib import Path
 
 import numpy as np
+from numba import njit
 from scipy.integrate import solve_ivp
 from sgp4.api import Satrec
 
 import settings as cfg
 from earth_models import (EARTH_ROTATION_VECTOR, GPS_UTC_LEAP_SECONDS, SPEED_OF_LIGHT, earth_rotation_angle,
-                          elevation_azimuth, multipath_variance, receiver_noise_std)
+                          earth_rotation_angle_numba, elevation_azimuth, multipath_variance, norm, power,
+                          receiver_noise_std)
 from gnss_measurements import EpochMeasurements, geometric_range, predict_pseudoranges
 
 GPS_EPOCH_JULIAN_DATE = 2444244.5               # 1980-01-06 0h
@@ -104,6 +108,42 @@ def load_gravity_field(degree):
 GRAVITY_C, GRAVITY_S = load_gravity_field(cfg.LEO_GRAVITY_DEGREE)
 
 
+@njit(cache=True)
+def gravity_acceleration_numba(r, C, S):
+    """gravity_acceleration with the coefficients C, S (GRAVITY_C, GRAVITY_S)."""
+    n_max = C.shape[0] - 1
+    r2 = r @ r
+    rho = power(EGM96_RADIUS, 2.0) / r2
+    x0, y0, z0 = EGM96_RADIUS * r[0] / r2, EGM96_RADIUS * r[1] / r2, EGM96_RADIUS * r[2] / r2
+    V, W = np.zeros((n_max + 2, n_max + 2)), np.zeros((n_max + 2, n_max + 2))
+    V[0, 0] = EGM96_RADIUS / np.sqrt(r2)
+    V[1, 0] = z0 * V[0, 0]
+    for n in range(2, n_max + 2):
+        V[n, 0] = ((2 * n - 1) * z0 * V[n - 1, 0] - (n - 1) * rho * V[n - 2, 0]) / n
+    for m in range(1, n_max + 2):
+        V[m, m] = (2 * m - 1) * (x0 * V[m - 1, m - 1] - y0 * W[m - 1, m - 1])
+        W[m, m] = (2 * m - 1) * (x0 * W[m - 1, m - 1] + y0 * V[m - 1, m - 1])
+        if m <= n_max:
+            V[m + 1, m] = (2 * m + 1) * z0 * V[m, m]
+            W[m + 1, m] = (2 * m + 1) * z0 * W[m, m]
+        for n in range(m + 2, n_max + 2):
+            V[n, m] = ((2 * n - 1) * z0 * V[n - 1, m] - (n + m - 1) * rho * V[n - 2, m]) / (n - m)
+            W[n, m] = ((2 * n - 1) * z0 * W[n - 1, m] - (n + m - 1) * rho * W[n - 2, m]) / (n - m)
+    ax = ay = az = 0.0
+    for n in range(n_max + 1):
+        ax -= C[n, 0] * V[n + 1, 1]
+        ay -= C[n, 0] * W[n + 1, 1]
+        az -= (n + 1) * C[n, 0] * V[n + 1, 0]
+        for m in range(1, n + 1):
+            f = 0.5 * (n - m + 1) * (n - m + 2)
+            ax += (0.5 * (-C[n, m] * V[n + 1, m + 1] - S[n, m] * W[n + 1, m + 1])
+                   + f * (C[n, m] * V[n + 1, m - 1] + S[n, m] * W[n + 1, m - 1]))
+            ay += (0.5 * (-C[n, m] * W[n + 1, m + 1] + S[n, m] * V[n + 1, m + 1])
+                   + f * (-C[n, m] * W[n + 1, m - 1] + S[n, m] * V[n + 1, m - 1]))
+            az += (n - m + 1) * (-C[n, m] * V[n + 1, m] - S[n, m] * W[n + 1, m])
+    return EGM96_GM / power(EGM96_RADIUS, 2.0) * np.array([ax, ay, az])
+
+
 def gravity_acceleration(r):
     """Spherical harmonic gravity [m/s^2] at ECEF position r (Montenbruck & Gill, Satellite Orbits, Sec. 3.2)."""
     C, S, n_max = GRAVITY_C, GRAVITY_S, GRAVITY_C.shape[0] - 1
@@ -139,6 +179,36 @@ def gravity_acceleration(r):
     return EGM96_GM / EGM96_RADIUS ** 2 * np.array([ax, ay, az])
 
 
+@njit(cache=True)
+def sun_moon_positions_numba(gps_time):
+    """sun_moon_positions."""
+    days = (gps_time - GPS_UTC_LEAP_SECONDS) / 86400.0
+    whole = np.floor(days)
+    whole, fraction = GPS_EPOCH_JULIAN_DATE + whole, days - whole
+    T = ((whole - 2451545.0) + fraction) / 36525.0
+    d = np.deg2rad
+    obliquity = d(23.439291 - 0.0130042 * T)
+    M = d(357.5291092 + 35999.05034 * T)
+    longitude = d(280.460 + 36000.771 * T + 1.914666471 * np.sin(M) + 0.019994643 * np.sin(2 * M))
+    distance = (1.000140612 - 0.016708617 * np.cos(M) - 0.000139589 * np.cos(2 * M)) * ASTRONOMICAL_UNIT
+    sun = distance * np.array([np.cos(longitude), np.cos(obliquity) * np.sin(longitude),
+                               np.sin(obliquity) * np.sin(longitude)])
+    longitude = d(218.32 + 481267.8813 * T + 6.29 * np.sin(d(134.9 + 477198.85 * T))
+                  - 1.27 * np.sin(d(259.2 - 413335.38 * T)) + 0.66 * np.sin(d(235.7 + 890534.23 * T))
+                  + 0.21 * np.sin(d(269.9 + 954397.70 * T)) - 0.19 * np.sin(d(357.5 + 35999.05 * T))
+                  - 0.11 * np.sin(d(186.6 + 966404.05 * T)))
+    latitude = d(5.13 * np.sin(d(93.3 + 483202.03 * T)) + 0.28 * np.sin(d(228.2 + 960400.87 * T))
+                 - 0.28 * np.sin(d(318.3 + 6003.18 * T)) - 0.17 * np.sin(d(217.6 - 407332.20 * T)))
+    parallax = d(0.9508 + 0.0518 * np.cos(d(134.9 + 477198.85 * T)) + 0.0095 * np.cos(d(259.2 - 413335.38 * T))
+                 + 0.0078 * np.cos(d(235.7 + 890534.23 * T)) + 0.0028 * np.cos(d(269.9 + 954397.70 * T)))
+    distance = EGM96_RADIUS / np.sin(parallax)
+    moon = distance * np.array([
+        np.cos(latitude) * np.cos(longitude),
+        np.cos(obliquity) * np.cos(latitude) * np.sin(longitude) - np.sin(obliquity) * np.sin(latitude),
+        np.sin(obliquity) * np.cos(latitude) * np.sin(longitude) + np.cos(obliquity) * np.sin(latitude)])
+    return sun, moon
+
+
 def sun_moon_positions(gps_time):
     """Low-precision Sun and Moon positions [m] (Vallado, Fundamentals of Astrodynamics, Algorithms 29 and 31)."""
     whole, fraction = julian_date(gps_time)
@@ -166,8 +236,27 @@ def sun_moon_positions(gps_time):
     return sun, moon
 
 
+@njit(cache=True)
+def third_body_acceleration_numba(r, body, gm):
+    """third_body_acceleration."""
+    return gm * ((body - r) / power(norm(body - r), 3.0) - body / power(norm(body), 3.0))
+
+
 def third_body_acceleration(r, body, gm):
     return gm * ((body - r) / np.linalg.norm(body - r) ** 3 - body / np.linalg.norm(body) ** 3)
+
+
+@njit(cache=True)
+def equations_of_motion_numba(gps_time, state, C, S):
+    """equations_of_motion with the gravity coefficients C, S."""
+    r = state[:3]
+    angle = earth_rotation_angle_numba(gps_time)
+    c, s = np.cos(angle), np.sin(angle)
+    to_ecef = np.array([[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]])
+    sun, moon = sun_moon_positions_numba(gps_time)
+    acceleration = (to_ecef.T @ gravity_acceleration_numba(to_ecef @ r, C, S)
+                    + third_body_acceleration_numba(r, sun, SUN_GM) + third_body_acceleration_numba(r, moon, MOON_GM))
+    return np.concatenate((state[3:], acceleration))
 
 
 def equations_of_motion(gps_time, state):
@@ -196,8 +285,7 @@ def force_model():
     if cfg.LEO_FORCE_MODEL == 'python':
         return equations_of_motion, None
     if cfg.LEO_FORCE_MODEL == 'numba':
-        from numba_kernels import leo_equations_of_motion
-        return leo_equations_of_motion, (GRAVITY_C, GRAVITY_S)
+        return equations_of_motion_numba, (GRAVITY_C, GRAVITY_S)
     raise ValueError(f"LEO_FORCE_MODEL must be 'python' or 'numba', not {cfg.LEO_FORCE_MODEL!r}")
 
 

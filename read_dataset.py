@@ -341,7 +341,7 @@ def download_dataset_folder(folder_name: str) -> Path:
 def load_navigation_data(split: str) -> NavigationData:
     """Load the 'train' or 'test' dataset (paper Sec. III) on the GNSS epochs.
 
-    Only the span of the fusion epochs (settings.MAX_FUSION_EPOCHS) is read from the RINEX,
+    Only the span of the fusion epochs (settings.MAX_FUSION_EPOCHS[split]) is read from the RINEX,
     truth, SP3 and CLK files.
     """
     folder = find_dataset_folder(cfg.TRAIN_FOLDER_NAME if split == 'train' else cfg.TEST_FOLDER_NAME)
@@ -353,11 +353,11 @@ def load_navigation_data(split: str) -> NavigationData:
     antenna_span, imu_truth_span = truth_time_span(antenna_file), truth_time_span(imu_truth_file)
     imu_times, gyro, accel = read_imu(folder / f'{imu_type}.imr', antenna_span[0])
 
-    # Fusion epochs: the first MAX_FUSION_EPOCHS GNSS epochs inside the IMU and both truth spans.
+    # Fusion epochs: the first MAX_FUSION_EPOCHS[split] GNSS epochs inside the IMU and both truth spans.
     start = max(imu_times[0], antenna_span[0], imu_truth_span[0])
     stop = min(imu_times[-1], antenna_span[1], imu_truth_span[1])
     gnss = read_rinex_observations(find_one_file([folder], ('ROVE*.*[oO]',), 'RINEX observation'), start, stop,
-                                   cfg.MAX_FUSION_EPOCHS)
+                                   cfg.MAX_FUSION_EPOCHS[split])
     fusion_times = np.array([t for t, _ in gnss])
     keep = (imu_times >= fusion_times[0] - 1.0) & (imu_times <= fusion_times[-1] + 1.0)
     first, last = fusion_times[0] - TRUTH_MARGIN, fusion_times[-1] + TRUTH_MARGIN

@@ -80,8 +80,9 @@ once `leo_pseudorange.network_orbit` is written, `'network'` (neural-network orb
 The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`: `My Drive/KF_Net_outputs` in Colab
 (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next to the code on my computer.
 
-For a quick run set `MAX_FUSION_EPOCHS` (e.g. 300) and `TRAINING_EPOCHS` in `settings.py`. Everything is then done
-on the first `MAX_FUSION_EPOCHS` fusion epochs only: the RINEX observations and the two truth files are read only
+For a quick run set `MAX_FUSION_EPOCHS` (one limit per dataset, e.g. `{'train': 300, 'test': 300}`) and
+`TRAINING_EPOCHS` in `settings.py`. Everything is then done on the first `MAX_FUSION_EPOCHS[split]` fusion epochs
+of each dataset only: the RINEX observations and the two truth files are read only
 over them, the SP3 and CLK products over them +- 3 h (`read_dataset.PRODUCT_MARGIN`, enough for the 10-point SP3
 interpolation, so the GNSS satellite positions and clocks are the same as with the whole files), the LEO orbits are
 made at these epochs, and the LEO error statistics (`real_error_bins`), the LEO orbit error of R and the

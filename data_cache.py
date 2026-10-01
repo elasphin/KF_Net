@@ -7,7 +7,7 @@ Reading the RINEX/IMU/truth files, the GNSS satellite orbits and the LEO orbit i
 simulation give the same result in every run (fixed seeds), so they are done once and kept in
 OUTPUT_FOLDER/cache/<split>_<key>.pkl. The key is a hash of everything they depend on:
   - all settings except the network, training, integrity and run-time ones (NOT_DATA_SETTINGS),
-  - the LEO filter orbits of the split (LEO_TRAIN_ORBIT or LEO_TEST_ORBITS, A26),
+  - the LEO filter orbits of the split (LEO_TRAIN_ORBIT or LEO_TEST_ORBITS, A26) and its MAX_FUSION_EPOCHS,
   - the code that makes them (DATA_CODE files),
   - name, size and modification time of the input files (dataset folder, products, TLE files).
 A change in any of these makes a new cache file (the old one of that split is removed). The LEO
@@ -34,6 +34,7 @@ NOT_DATA_SETTINGS = {
     'FALSE_ALARM_PROBABILITY', 'HORIZONTAL_PL_FACTOR', 'VERTICAL_PL_FACTOR', 'ALERT_LIMIT',
     'INS_MECHANIZATION', 'DATA_CACHE',
     'LEO_TRAIN_ORBIT', 'LEO_TEST_ORBITS',          # only the orbits of the split are in the key (split_orbits)
+    'MAX_FUSION_EPOCHS',                           # only the limit of the split is in the key
     'TRAIN_FOLDER_NAME', 'TEST_FOLDER_NAME',      # the folder of the split is in the key itself
     'PROJECT_FOLDER', 'COLAB_FOLDER', 'COLAB_OUTPUT_FOLDER', 'KAGGLE_FOLDER', 'KAGGLE_OUTPUT_FOLDER', 'LOCAL_FOLDER',
     'LOCAL_OUTPUT_FOLDER',                        # candidates of DATASET_FOLDER / OUTPUT_FOLDER (these are in the key)
@@ -85,7 +86,7 @@ def input_files(folder):
 def cache_key(split):
     folder_name = cfg.TRAIN_FOLDER_NAME if split == 'train' else cfg.TEST_FOLDER_NAME
     folder = find_dataset_folder(folder_name)
-    digest = hashlib.sha256(f'{split} {folder_name} {split_orbits(split)}'.encode())
+    digest = hashlib.sha256(f'{split} {folder_name} {split_orbits(split)} {cfg.MAX_FUSION_EPOCHS[split]}'.encode())
     for name, value in sorted(vars(cfg).items()):
         if name.isupper() and name not in NOT_DATA_SETTINGS:
             digest.update(f'{name}={value!r}\n'.encode())

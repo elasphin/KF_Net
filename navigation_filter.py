@@ -119,7 +119,7 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
     """
     last = len(data.fusion_times) - 1 if last is None else last
     times = data.fusion_times
-    state, P = truth_state(data, first), initial_covariance()
+    state, P = truth_state(data, first), initial_covariance(data)
     i = np.searchsorted(data.imu_times, times[first], side='right') - 1            # last IMU sample <= start
     no_shift = torch.zeros(STATE_SIZE, dtype=torch.float64)
     previous = {'accel': data.accel[i], 'gyro': data.gyro[i], 'state': state, 'residuals': {}, 'shift': no_shift,

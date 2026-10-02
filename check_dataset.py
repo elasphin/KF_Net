@@ -24,7 +24,7 @@ import numpy as np
 import torch
 
 import settings as cfg
-from data_cache import load_dataset
+from data_cache import load_dataset, training_split
 from earth_models import EARTH_ROTATION_VECTOR, ecef_to_llh, ecef_to_ned_matrix, gravity, rotation_matrix_to_vector, skew
 from gnss_measurements import predict_pseudoranges
 from ins_filter import propagate_ins, truth_state
@@ -139,7 +139,7 @@ def one_second_ins(data, full_imu, mounting):
         print(f'   measured - expected specific force: {np.round(difference / 9.80665 * 1e3, 2)} mg; a constant error '
               f'a gives a free-INS error of a t^2 / 2 = {0.5 * np.linalg.norm(difference) * 100.0 ** 2:.0f} m at 100 s. '
               f'It is an accelerometer bias or a tilt of {np.rad2deg(np.linalg.norm(difference) / 9.8):.3f} deg; '
-              f'the filter starts with sigma {cfg.INITIAL_ACCEL_BIAS_STD / 9.80665 * 1e3:.3g} mg (bias) and '
+              f'the filter starts with sigma {np.round(data.accel_bias_std / 9.80665 * 1e3, 3)} mg (bias) and '
               f'{np.rad2deg(cfg.INITIAL_ATTITUDE_STD):.3g} deg (attitude)')
         print(f'   README.xml SINS_RotAngle_IMU (mounting) {mounting} deg')
     else:
@@ -194,7 +194,7 @@ def residuals(data, measurements):
 def baselines(data, measurements):
     print('\n7. Filter baselines on the training / validation parts of train.py, 3-D antenna RMSE [m]')
     last = len(data.fusion_times) - 1
-    split = int(round(last * (1.0 - cfg.VALIDATION_FRACTION)))
+    split = training_split(len(data.fusion_times))
     only_gnss = [m.subset(np.flatnonzero(m.systems != 'L')) for m in measurements]
     nothing = [m.subset(np.array([], dtype=int)) for m in measurements]
     network = None

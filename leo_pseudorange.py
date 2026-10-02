@@ -38,7 +38,7 @@ Measurements:
 - C/N0: mean C/N0 of the real GPS/BDS-3 observations in the same elevation bin
   (paper Fig. 5; Ref. [35] gives no elevation-C/N0 formula).
 - Orbit error variance of the filter (A25): mean square range error of the
-  training filter orbit on the training dataset, saved in
+  training filter orbit on the training part of the training dataset, saved in
   leo_orbit_error_train.json (zero for the reference orbit), used in R of every
   test orbit.
 The *_numba functions are Numba-compiled copies of the Python function that follows each of them
@@ -397,22 +397,26 @@ def elevation_bin(elevation, bin_count):
     return np.minimum((np.rad2deg(elevation) // cfg.LEO_ELEVATION_BIN_DEG).astype(int), bin_count - 1)
 
 
-def real_error_bins(data, gnss_epochs):
-    """Per elevation bin of the real GPS/BDS-3 observations: (error shapes, mean C/N0).
+def real_error_bins(data, gnss_epochs, epochs):
+    """Per elevation bin of the real GPS/BDS-3 observations of the given epochs: (error shapes, mean C/N0).
 
     error = pseudorange - Eq. (1) prediction at the truth antenna position, the
     receiver clock of each system removed with the median of the epoch; the
-    shape is this error divided by its Eq. (3) standard deviation.
+    shape is this error divided by its Eq. (3) standard deviation. Only the rows the
+    filter uses (GNSS_ELEVATION_MASK_DEG, A10). epochs: the training part of the training
+    dataset, or the whole testing dataset (A3).
     """
     bin_count = int(np.ceil(90.0 / cfg.LEO_ELEVATION_BIN_DEG))
     shapes, cn0 = [[] for _ in range(bin_count)], [[] for _ in range(bin_count)]
-    for k, meas in enumerate(gnss_epochs):
+    mask = np.deg2rad(cfg.GNSS_ELEVATION_MASK_DEG)
+    for k in epochs:
+        meas = gnss_epochs[k]
         predicted, _, elevation, variance = predict_pseudoranges(data.truth_antenna_position[k], meas,
                                                                  data.fusion_times[k], data.klobuchar_alpha,
                                                                  data.klobuchar_beta)
         error = meas.pseudoranges - predicted
         for system in ('G', 'C'):
-            rows = np.flatnonzero((meas.systems == system) & (elevation > 0.0))
+            rows = np.flatnonzero((meas.systems == system) & (elevation > 0.0) & (elevation >= mask))
             if len(rows) < 2:
                 continue
             for b, e, s, c in zip(elevation_bin(elevation[rows], bin_count), error[rows] - np.median(error[rows]),
@@ -445,8 +449,8 @@ def simulate_leo_measurements(data, error_bins, seed, orbit_names):
 
     The pseudoranges (and their noise draws) are made once with the reference orbit; every
     filter orbit of orbit_names (A26) gets the same rows with its own satellite positions.
-    Returns {orbit name: epochs} and {orbit name: range errors of that orbit (filter minus
-    true geometric range at the truth antenna) of all simulated rows}.
+    Returns {orbit name: epochs} and {orbit name: [range errors of that orbit (filter minus
+    true geometric range at the truth antenna) of the rows of each epoch]}.
     """
     rng = np.random.default_rng(seed)
     orbits = leo_orbits(data.fusion_times, data.truth_antenna_position, orbit_names)
@@ -477,7 +481,7 @@ def simulate_leo_measurements(data, error_bins, seed, orbit_names):
             range_errors[name].append(geometric_range(receiver, satellites) - true_range)
             epochs[name].append(EpochMeasurements(sat_ids[visible], np.full(n, 'L'), pseudoranges, satellites,
                                                   np.zeros(n), cn0, np.zeros(n)))
-    return epochs, {name: np.concatenate(errors) for name, errors in range_errors.items()}
+    return epochs, range_errors
 
 
 def range_error_summary(range_errors):
@@ -489,10 +493,10 @@ def range_error_summary(range_errors):
 def orbit_error_variance(range_errors, split):
     """sigma^2 of the orbit error in the filter R (A25), the same for every filter orbit (A26).
 
-    range_errors: {filter orbit name: range errors}. Writes leo_orbit_error_<split>.json
-    (train: RMS, mean and samples of LEO_TRAIN_ORBIT; test: the same for each test orbit) and
-    returns the mean square range error of LEO_TRAIN_ORBIT on the training dataset (written by
-    train.py; zero for the reference orbit).
+    range_errors: {filter orbit name: range errors} (train: of the training part only, A21; test: of the whole
+    dataset). Writes leo_orbit_error_<split>.json (train: RMS, mean and samples of LEO_TRAIN_ORBIT; test: the
+    same for each test orbit) and returns the mean square range error of LEO_TRAIN_ORBIT on the training part
+    of the training dataset (written by train.py; zero for the reference orbit).
     """
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
     train_file = cfg.OUTPUT_FOLDER / 'leo_orbit_error_train.json'

@@ -60,6 +60,9 @@ Precise orbit/clock products and the broadcast navigation file of the observatio
 not contain them, download the MGEX products of that day (e.g. from the IGS/BKG or CDDIS archives) into that
 `products/` folder.
 
+The initial standard deviations of the IMU biases are read from the dataset's `IMUErrorModel.txt` (block of the IMU
+type in `README.xml`, ASSUMPTIONS.md A7), in the data folder, a folder above it or anywhere in the dataset path.
+
 ## Run
 
 In Colab, first get the code: `!git clone https://github.com/elasphin/KF_Net.git` and `%cd KF_Net`.
@@ -82,13 +85,15 @@ once `leo_pseudorange.network_orbit` is written, `'network'` (neural-network orb
 The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`: `My Drive/KF_Net_outputs` in Colab
 (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next to the code on my computer.
 
-For a quick run set `MAX_FUSION_EPOCHS` (one limit per dataset, e.g. `{'train': 300, 'test': 300}`) and
+By default both datasets are used whole (`MAX_FUSION_EPOCHS = {'train': None, 'test': None}`, as in the paper). Note
+that both start with a static period (Data01: about 13 min, Data02: about 2 min before the vehicle moves).
+For a quick run set `MAX_FUSION_EPOCHS` (one limit per dataset, e.g. `{'train': 1500, 'test': 600}`) and
 `TRAINING_EPOCHS` in `settings.py`. Everything is then done on the first `MAX_FUSION_EPOCHS[split]` fusion epochs
 of each dataset only: the RINEX observations and the two truth files are read only
 over them, the SP3 and CLK products over them +- 3 h (`read_dataset.PRODUCT_MARGIN`, enough for the 10-point SP3
 interpolation, so the GNSS satellite positions and clocks are the same as with the whole files), the LEO orbits are
 made at these epochs, and the LEO error statistics (`real_error_bins`), the LEO orbit error of R and the
-training/validation split come from them. The LEO reference orbit is still integrated from the epoch of its
+training/validation split come from them (on the training dataset the statistics come from its training part only). The LEO reference orbit is still integrated from the epoch of its
 reference TLE (ASSUMPTIONS.md A1), so the time from that epoch to the fusion epochs is not shortened. The time of
 each stage (reading, GNSS, LEO) and of the training is printed.
 

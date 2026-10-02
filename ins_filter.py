@@ -30,10 +30,11 @@ class NavigationState:
     gyro_bias: np.ndarray       # [rad/s]
 
 
-def initial_covariance():
+def initial_covariance(data):
+    """P_0 (A7): truth accuracy, settings for velocity and attitude, bias sigmas of the dataset's IMU error model."""
     return np.diag(np.concatenate([np.full(3, cfg.INITIAL_POSITION_STD), np.full(3, cfg.INITIAL_VELOCITY_STD),
-                                   np.full(3, cfg.INITIAL_ATTITUDE_STD), np.full(3, cfg.INITIAL_ACCEL_BIAS_STD),
-                                   np.full(3, cfg.INITIAL_GYRO_BIAS_STD)]) ** 2)
+                                   np.full(3, cfg.INITIAL_ATTITUDE_STD), data.accel_bias_std,
+                                   data.gyro_bias_std]) ** 2)
 
 
 def noise_density():
@@ -165,11 +166,16 @@ def clock_projector(systems, variance):
 
 
 def measurement_model(state, meas: EpochMeasurements, lever_arm, time, alpha, beta, max_count=None):
-    """Tightly coupled pseudorange model (paper Eq. (9)-(10)); None if no usable row."""
+    """Tightly coupled pseudorange model (paper Eq. (9)-(10)); None if no usable row.
+
+    GPS/BDS-3 rows at or above GNSS_ELEVATION_MASK_DEG (A10); LEO rows above the horizon (their mask is
+    applied when they are simulated, A2).
+    """
     lever_ecef = state.attitude @ lever_arm
     antenna = state.position + lever_ecef
     predicted, line_of_sight, elevation, variance = predict_pseudoranges(antenna, meas, time, alpha, beta)
-    rows = np.flatnonzero(elevation > 0.0)
+    mask = np.where(meas.systems == 'L', 0.0, np.deg2rad(cfg.GNSS_ELEVATION_MASK_DEG))  # LEO: mask of the simulation
+    rows = np.flatnonzero((elevation > 0.0) & (elevation >= mask))
     if max_count is not None and len(rows) > max_count:                  # A16: keep the highest satellites
         rows = np.sort(rows[np.argsort(-elevation[rows])[:max_count]])
     counts = {s: np.sum(meas.systems[rows] == s) for s in SYSTEM_ORDER}

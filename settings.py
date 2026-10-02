@@ -53,7 +53,7 @@ KAGGLE_DATASET = 'elasphin/mknet-project'                      # [paper Sec. III
 PRODUCTS_FOLDER = DATASET_FOLDER / 'products'   # SP3, CLK, brdm if not in the data folder; then DATASET_FOLDER itself
 TRAIN_FOLDER_NAME = 'Data01_20230102_ISA-100C_Vehicle_Complex'  # training set (~150 min, Table I)
 TEST_FOLDER_NAME = 'Data02_20220309_ISA-100C_Vehicle_Complex'   # testing set (~110 min, Table I)
-MAX_FUSION_EPOCHS = {'train': 101, 'test': 50}   # first fusion epochs of each dataset; None = all, e.g. 300
+MAX_FUSION_EPOCHS = {'train': None, 'test': None}   # first fusion epochs of each dataset; None = all (paper)
 RANDOM_SEED = 0
 
 # --- IMU error model (paper Table II) ----------------------------------------
@@ -65,13 +65,14 @@ BIAS_CORRELATION_TIME = 3600.0     # s, bias random-walk density 2*BS^2/tau     
 INITIAL_POSITION_STD = 0.1         # m, accuracy of the post-processed truth      [paper Sec. III-A]
 INITIAL_VELOCITY_STD = 0.01        # m/s                                          [choice A7]
 INITIAL_ATTITUDE_STD = np.deg2rad(0.01)  # rad                                    [choice A7]
-# Turn-on bias of the real IMU (not the in-run instability BS of Table II): the static start of Data01 shows
-# ~3 mg on one accelerometer (check_dataset.py section 4), 19 sigma of the former BS-based value.
-INITIAL_ACCEL_BIAS_STD = 5e-3 * 9.80665               # 5 mg -> m/s^2                [choice A7]
-INITIAL_GYRO_BIAS_STD = np.deg2rad(1.0) / 3600.0      # 1 deg/h -> rad/s             [choice A7]
+# Initial bias standard deviations (turn-on bias, not the in-run instability BS of Table II): ISDV_AccelBias and
+# ISDV_GyrosBias of the dataset's IMU error model file for the IMU of README.xml (ISA-100C: 0.02 m/s^2 ~ 2 mg,
+# 9e-5 deg/s = 0.32 deg/h). The static start of Data01 shows ~3.2 mg on one accelerometer (check_dataset.py).
+IMU_ERROR_MODEL_FILE_NAME = 'IMUErrorModel.txt'  # in the data folder, a folder above it or DATASET_FOLDER [choice A7]
 
 # --- GNSS (paper Table II, Eq. (3)-(4), Ref. [35], [37]) ---------------------
 BDS3_FIRST_PRN = 19                # BDS-3 satellites are C19 and above           [paper Table II]
+GNSS_ELEVATION_MASK_DEG = 10.0     # deg, GPS/BDS-3 rows used (GINav [44] default) [choice A10]
 URA_STD = 1.5                      # m, [ref 35]: "commonly 1-2 m"                [choice A9]
 IONO_VERTICAL_STD = ((20.0, 9.0), (55.0, 4.5), (90.0, 6.0))  # (|lat| limit deg, m) [ref 35 Eq. 16]
 IONO_MEAN_HEIGHT = 350e3           # m                                            [ref 35]

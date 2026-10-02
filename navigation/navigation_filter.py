@@ -16,11 +16,11 @@ import torch
 from scipy.stats import chi2
 
 import settings as cfg
-from earth_models import ecef_to_llh, ecef_to_ned_matrix, skew
-from ins_filter import (STATE_SIZE, apply_correction, classical_gain, error_matrix, initial_covariance,
-                        joseph_covariance, measurement_model, process_noise, propagate_ins, state_difference,
-                        transition_matrix, truth_state)
-from masked_cla_network import build_network_input
+from measurements.earth_models import ecef_to_llh, ecef_to_ned_matrix, skew
+from navigation.ins_filter import (STATE_SIZE, apply_correction, classical_gain, error_matrix, initial_covariance,
+                                   joseph_covariance, measurement_model, process_noise, propagate_ins,
+                                   state_difference, transition_matrix, truth_state)
+from navigation.masked_cla_network import build_network_input
 
 PARALLEL_TOLERANCE = 1e-9     # relative: c_i parallel to an identified fault, or already explained by it
 

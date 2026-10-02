@@ -12,9 +12,10 @@ from dataclasses import dataclass
 import numpy as np
 
 import settings as cfg
-from earth_models import (BDS_B1I_CHIP_RATE, BDS_B1I_FREQUENCY, EARTH_ROTATION_RATE, GPS_CA_CHIP_RATE,
-                          GPS_L1_FREQUENCY, SPEED_OF_LIGHT, ecef_to_llh, elevation_azimuth, klobuchar_delay,
-                          multipath_variance, pseudorange_variance, receiver_noise_std, saastamoinen_delay)
+from measurements.earth_models import (BDS_B1I_CHIP_RATE, BDS_B1I_FREQUENCY, EARTH_ROTATION_RATE, GPS_CA_CHIP_RATE,
+                                       GPS_L1_FREQUENCY, SPEED_OF_LIGHT, ecef_to_llh, elevation_azimuth,
+                                       klobuchar_delay, multipath_variance, pseudorange_variance, receiver_noise_std,
+                                       saastamoinen_delay)
 
 SYSTEM_ORDER = ('G', 'C', 'L')                      # GPS, BDS-3, LEO
 FREQUENCY = {'G': GPS_L1_FREQUENCY, 'C': BDS_B1I_FREQUENCY}

@@ -1,6 +1,6 @@
 """Read dataset and simulated measurements of 'train' or 'test', kept on disk between runs (settings.DATA_CACHE).
 
-    from data_cache import load_dataset
+    from data_io.data_cache import load_dataset
     data, measurements = load_dataset('train')      # measurements: {LEO filter orbit: epochs} (A26)
 
 Reading the RINEX/IMU/truth files, the GNSS satellite orbits and the LEO orbit integration and
@@ -21,18 +21,16 @@ measurements; on the testing dataset from the whole dataset (its own environment
 import hashlib
 import pickle
 import time
-from pathlib import Path
 
 import numpy as np
 
 import settings as cfg
-from gnss_measurements import merge_measurements, prepare_gnss_measurements
-from leo_pseudorange import find_tle_folder, mean_cn0_bins, orbit_error_variance, simulate_leo_measurements
-from read_dataset import find_dataset_folder, find_imu_error_model, load_navigation_data
+from measurements.gnss_measurements import merge_measurements, prepare_gnss_measurements
+from measurements.leo_pseudorange import find_tle_folder, mean_cn0_bins, orbit_error_variance, simulate_leo_measurements
+from data_io.read_dataset import find_dataset_folder, find_imu_error_model, load_navigation_data
 
-CODE_FOLDER = Path(__file__).resolve().parent
-DATA_CODE = ('read_dataset.py', 'earth_models.py', 'gnss_measurements.py', 'leo_pseudorange.py', 'egm96_degree20.txt',
-             'data_cache.py')
+DATA_CODE = ('data_io/read_dataset.py', 'data_io/data_cache.py', 'measurements/earth_models.py',
+             'measurements/gnss_measurements.py', 'measurements/leo_pseudorange.py', 'measurements/egm96_degree20.txt')
 NOT_DATA_SETTINGS = {
     'CONV_FILTERS', 'CONV_KERNEL_SIZE', 'POOL_KERNEL_SIZE', 'LSTM_UNITS', 'LSTM_LAYERS', 'LSTM_DROPOUT',
     'FC_HIDDEN_UNITS', 'MASK_EPSILON', 'RANDOM_SEED', 'LEARNING_RATE', 'TRAINING_EPOCHS', 'L2_WEIGHT',
@@ -111,7 +109,7 @@ def cache_key(split):
         if name.isupper() and name not in NOT_DATA_SETTINGS:
             digest.update(f'{name}={value!r}\n'.encode())
     for name in DATA_CODE:
-        digest.update((CODE_FOLDER / name).read_bytes())
+        digest.update((cfg.PROJECT_FOLDER / name).read_bytes())
     for path in input_files(folder):
         stat = path.stat()
         digest.update(f'{path} {stat.st_size} {stat.st_mtime_ns}\n'.encode())

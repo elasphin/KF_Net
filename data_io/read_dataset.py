@@ -22,7 +22,8 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 import settings as cfg
-from earth_models import GPS_UTC_LEAP_SECONDS, GPS_WEEK_SECONDS, ecef_to_llh, ecef_to_ned_matrix, gps_seconds
+from measurements.earth_models import (GPS_UTC_LEAP_SECONDS, GPS_WEEK_SECONDS, ecef_to_llh, ecef_to_ned_matrix,
+                                       gps_seconds)
 
 IMR_HEADER_SIZE = 512
 TRUTH_TAIL_BYTES = 100_000         # end of a truth file read for its last time

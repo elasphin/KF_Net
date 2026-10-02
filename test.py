@@ -13,10 +13,10 @@ import numpy as np
 import torch
 
 import settings as cfg
-from data_cache import load_dataset
-from earth_models import ecef_to_llh, ecef_to_ned_matrix
-from masked_cla_network import MaskedCLANetwork
-from navigation_filter import run_filter, stanford_percentages
+from data_io.data_cache import load_dataset
+from measurements.earth_models import ecef_to_llh, ecef_to_ned_matrix
+from navigation.masked_cla_network import MaskedCLANetwork
+from navigation.navigation_filter import run_filter, stanford_percentages
 from train import CHECKPOINT_FILE
 
 METHODS = ('masked_cla_kalmannet', 'traditional_ekf')

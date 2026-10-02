@@ -1,4 +1,4 @@
-"""LEO signals of opportunity: orbits from TLE files (ASSUMPTIONS.md A1) and the pseudorange
+"""LEO signals of opportunity: orbits from TLE files (docs/ASSUMPTIONS.md A1) and the pseudorange
 simulation (paper Sec. II-A, Sec. III-A).
 
 Orbits. Per dataset and satellite two TLEs are chosen:
@@ -54,10 +54,10 @@ from scipy.integrate import solve_ivp
 from sgp4.api import Satrec
 
 import settings as cfg
-from earth_models import (EARTH_ROTATION_VECTOR, GPS_UTC_LEAP_SECONDS, SPEED_OF_LIGHT, earth_rotation_angle,
-                          earth_rotation_angle_numba, elevation_azimuth, multipath_variance, norm, power,
-                          receiver_noise_std)
-from gnss_measurements import EpochMeasurements, geometric_range
+from measurements.earth_models import (EARTH_ROTATION_VECTOR, GPS_UTC_LEAP_SECONDS, SPEED_OF_LIGHT,
+                                       earth_rotation_angle, earth_rotation_angle_numba, elevation_azimuth,
+                                       multipath_variance, norm, power, receiver_noise_std)
+from measurements.gnss_measurements import EpochMeasurements, geometric_range
 
 GPS_EPOCH_JULIAN_DATE = 2444244.5               # 1980-01-06 0h
 GRAVITY_FILE = Path(__file__).resolve().parent / 'egm96_degree20.txt'

@@ -24,12 +24,13 @@ import numpy as np
 import torch
 
 import settings as cfg
-from data_cache import load_dataset, training_split
-from earth_models import EARTH_ROTATION_VECTOR, ecef_to_llh, ecef_to_ned_matrix, gravity, rotation_matrix_to_vector, skew
-from gnss_measurements import predict_pseudoranges
-from ins_filter import propagate_ins, truth_state
-from navigation_filter import run_filter
-from read_dataset import IMR_HEADER_SIZE, find_dataset_folder, read_imu, read_rover_info
+from data_io.data_cache import load_dataset, training_split
+from data_io.read_dataset import IMR_HEADER_SIZE, find_dataset_folder, read_imu, read_rover_info
+from measurements.earth_models import (EARTH_ROTATION_VECTOR, ecef_to_llh, ecef_to_ned_matrix, gravity,
+                                       rotation_matrix_to_vector, skew)
+from measurements.gnss_measurements import predict_pseudoranges
+from navigation.ins_filter import propagate_ins, truth_state
+from navigation.navigation_filter import run_filter
 
 IMR_FIELDS = ('header', 'byte_order', 'version', 'delta_theta', 'delta_velocity', 'rate_hz', 'gyro_scale',
               'accel_scale', 'utc_or_gps_time', 'receiver_or_corrected_time', 'time_tag_bias', 'imu_name',
@@ -200,7 +201,7 @@ def baselines(data, measurements):
     network = None
     checkpoint_file = cfg.OUTPUT_FOLDER / 'masked_cla_network.pt'
     if checkpoint_file.exists():
-        from masked_cla_network import MaskedCLANetwork
+        from navigation.masked_cla_network import MaskedCLANetwork
         checkpoint = torch.load(checkpoint_file)
         network = MaskedCLANetwork(checkpoint['max_measurements'])
         network.load_state_dict(checkpoint['state_dict'])

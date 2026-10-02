@@ -10,7 +10,7 @@ with a numerical reference orbit, predicted by the filter with SGP4), are fused 
 network. Fault detection and DIA adaptation run on the INS-predicted innovation.
 
 What follows the paper exactly, what was removed, and every assumption the paper leaves open (with the
-alternatives to choose from) are listed in [ASSUMPTIONS.md](ASSUMPTIONS.md). Each value in `settings.py` is
+alternatives to choose from) are listed in [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md). Each value in `settings.py` is
 tagged `[paper]`, `[ref N]` or `[choice AX]`.
 
 ## Files
@@ -18,15 +18,15 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | File | Content |
 |---|---|
 | `settings.py` | All settings with their source, and the dataset and output folders in Colab (Google Drive), on Kaggle or on my computer |
-| `read_dataset.py` | Finds the dataset folders under that path (or downloads the needed files) and reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
-| `earth_models.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4) |
-| `gnss_measurements.py` | Satellite positions/clocks and the pseudorange model of Eq. (1) |
-| `leo_pseudorange.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5) (Student-t MP/NLOS noise with the variance of Eq. (4), A3), and the orbit error variance of the filter |
-| `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_pseudorange.py`) |
-| `data_cache.py` | Reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
-| `ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
-| `masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
-| `navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
+| `data_io/read_dataset.py` | Finds the dataset folders under that path (or downloads the needed files) and reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
+| `data_io/data_cache.py` | Reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
+| `measurements/earth_models.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4) |
+| `measurements/gnss_measurements.py` | Satellite positions/clocks and the pseudorange model of Eq. (1) |
+| `measurements/leo_pseudorange.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5) (Student-t MP/NLOS noise with the variance of Eq. (4), A3), and the orbit error variance of the filter |
+| `measurements/egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_pseudorange.py`) |
+| `navigation/ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
+| `navigation/masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
+| `navigation/navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
 | `train.py` | Offline training with validation, Eq. (30)-(32) |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
 | `check_dataset.py` | Checks of the real dataset reading against the truth (IMR header, truth columns, lever arm, 1-s INS with IMU time offsets, free INS, pseudorange residuals) and the free-INS / EKF GNSS / EKF GNSS+LEO / network baselines on the training and validation parts |
@@ -61,7 +61,7 @@ not contain them, download the MGEX products of that day (e.g. from the IGS/BKG 
 `products/` folder.
 
 The initial standard deviations of the IMU biases are read from the dataset's `IMUErrorModel.txt` (block of the IMU
-type in `README.xml`, ASSUMPTIONS.md A7), in the data folder, a folder above it or anywhere in the dataset path.
+type in `README.xml`, docs/ASSUMPTIONS.md A7), in the data folder, a folder above it or anywhere in the dataset path.
 
 ## Run
 
@@ -77,7 +77,7 @@ python show_results.py  # outputs/results_training.png, results_orbits.png, resu
                         #         results_errors_<orbit>.png, results_cdf_<orbit>.png, results_stanford_<orbit>.png
 ```
 
-LEO orbit of the filter (ASSUMPTIONS.md A26): the network is trained once with `LEO_TRAIN_ORBIT` (`'reference'`, the
+LEO orbit of the filter (docs/ASSUMPTIONS.md A26): the network is trained once with `LEO_TRAIN_ORBIT` (`'reference'`, the
 true orbit) and `test.py` runs it and the traditional EKF with every orbit of `LEO_TEST_ORBITS` on the same
 measurements and the same R: `'reference'` (upper bound), `'tle'` (SGP4 of the TLE available before the dataset) and,
 once `leo_pseudorange.network_orbit` is written, `'network'` (neural-network orbit prediction).
@@ -94,7 +94,7 @@ over them, the SP3 and CLK products over them +- 3 h (`read_dataset.PRODUCT_MARG
 interpolation, so the GNSS satellite positions and clocks are the same as with the whole files), the LEO orbits are
 made at these epochs, and the LEO C/N0 per elevation (`mean_cn0_bins`), the LEO orbit error of R and the
 training/validation split come from them (on the training dataset the statistics come from its training part only). The LEO reference orbit is still integrated from the epoch of its
-reference TLE (ASSUMPTIONS.md A1), so the time from that epoch to the fusion epochs is not shortened. The time of
+reference TLE (docs/ASSUMPTIONS.md A1), so the time from that epoch to the fusion epochs is not shortened. The time of
 each stage (reading, GNSS, LEO) and of the training is printed.
 
 ## Run time
@@ -118,7 +118,7 @@ before.
 
 ## References
 
-PDFs in `Papers/`.
+PDFs in `docs/papers/`.
 
 - Main paper: J. Yan et al., "A Robust Position Approach Based on Masked KalmanNet for GNSS/LEO/INS Integrated
   Navigation System," IEEE Internet Things J., vol. 13, no. 11, 2026.

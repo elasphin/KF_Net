@@ -14,9 +14,9 @@ A change in any of these makes a new cache file (the old one of that split is re
 orbit error variance of the filter R (A25) is not kept: it is set from leo_orbit_error_train.json
 in every run, as before.
 
-Statistics taken from the data (A3, A25, A21): on the training dataset only from its training part
-(epochs 0..training_split), so the validation part does not shape the training measurements; on the
-testing dataset from the whole dataset (its own environment, paper Fig. 16).
+Statistics taken from the data (LEO C/N0 per elevation, A3; orbit term of R, A25): on the training dataset
+only from its training part (epochs 0..training_split, A21), so the validation part does not shape the training
+measurements; on the testing dataset from the whole dataset (its own environment).
 """
 import hashlib
 import pickle
@@ -27,7 +27,7 @@ import numpy as np
 
 import settings as cfg
 from gnss_measurements import merge_measurements, prepare_gnss_measurements
-from leo_pseudorange import find_tle_folder, orbit_error_variance, real_error_bins, simulate_leo_measurements
+from leo_pseudorange import find_tle_folder, mean_cn0_bins, orbit_error_variance, simulate_leo_measurements
 from read_dataset import find_dataset_folder, find_imu_error_model, load_navigation_data
 
 CODE_FOLDER = Path(__file__).resolve().parent
@@ -54,7 +54,7 @@ def training_split(fusion_epoch_count):
 
 
 def statistics_epochs(split, fusion_epoch_count):
-    """Epochs whose data statistics make the LEO noise and the R orbit term (A3, A25)."""
+    """Epochs whose data statistics make the LEO C/N0 and the R orbit term (A3, A25)."""
     return range(training_split(fusion_epoch_count) + 1 if split == 'train' else fusion_epoch_count)
 
 
@@ -72,8 +72,8 @@ def simulate_measurements(data, split):
     gnss = prepare_gnss_measurements(data)
     print(f'GNSS measurements: {time.time() - start:.1f} s')
     start = time.time()
-    bins = real_error_bins(data, gnss, statistics_epochs(split, len(data.fusion_times)))
-    leo, range_errors = simulate_leo_measurements(data, bins, cfg.LEO_NOISE_SEED[split], split_orbits(split))
+    cn0_bins = mean_cn0_bins(data, gnss, statistics_epochs(split, len(data.fusion_times)))
+    leo, range_errors = simulate_leo_measurements(data, cn0_bins, cfg.LEO_NOISE_SEED[split], split_orbits(split))
     print(f'LEO orbits and measurements: {time.time() - start:.1f} s')
     return gnss, leo, range_errors
 

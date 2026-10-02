@@ -21,7 +21,7 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `read_dataset.py` | Finds the dataset folders under that path (or downloads the needed files) and reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
 | `earth_models.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4) |
 | `gnss_measurements.py` | Satellite positions/clocks and the pseudorange model of Eq. (1) |
-| `leo_pseudorange.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5), and the orbit error variance of the filter |
+| `leo_pseudorange.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5) (Student-t MP/NLOS noise with the variance of Eq. (4), A3), and the orbit error variance of the filter |
 | `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_pseudorange.py`) |
 | `data_cache.py` | Reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
 | `ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
@@ -92,7 +92,7 @@ For a quick run set `MAX_FUSION_EPOCHS` (one limit per dataset, e.g. `{'train': 
 of each dataset only: the RINEX observations and the two truth files are read only
 over them, the SP3 and CLK products over them +- 3 h (`read_dataset.PRODUCT_MARGIN`, enough for the 10-point SP3
 interpolation, so the GNSS satellite positions and clocks are the same as with the whole files), the LEO orbits are
-made at these epochs, and the LEO error statistics (`real_error_bins`), the LEO orbit error of R and the
+made at these epochs, and the LEO C/N0 per elevation (`mean_cn0_bins`), the LEO orbit error of R and the
 training/validation split come from them (on the training dataset the statistics come from its training part only). The LEO reference orbit is still integrated from the epoch of its
 reference TLE (ASSUMPTIONS.md A1), so the time from that epoch to the fusion epochs is not shortened. The time of
 each stage (reading, GNSS, LEO) and of the training is printed.

@@ -29,12 +29,12 @@ Measurements:
 - Pseudorange: geometric range (with the Sagnac term) + noise; satellite and
   receiver clocks (A4) and ionosphere/troposphere (A24) are ideal, i.e. known
   and removed, so they are in neither the measurement nor the prediction.
-- Noise, one draw per satellite and epoch (A3): receiver noise, Gaussian with
-  the standard deviation of Eq. (3) (formula of Ref. [35]); MP/NLOS: standard
-  deviation of Eq. (4) (Ref. [37]) times a non-Gaussian shape drawn from the
-  real GPS/BDS-3 errors of the same dataset in the same elevation bin (paper
-  Sec. III-A: statistics of the real data). The orbit error comes from the
-  two orbits, so URA is not added.
+- Noise, one independent draw per satellite and epoch (A3): receiver noise,
+  Gaussian with the standard deviation of Eq. (3) (formula of Ref. [35]);
+  MP/NLOS: Student-t with LEO_NOISE_DOF degrees of freedom (heavy-tailed,
+  non-Gaussian, paper Sec. III-A), scaled so that its standard deviation is
+  that of Eq. (4) (Ref. [37]). The noise variance is therefore the LEO
+  variance of R. The orbit error comes from the two orbits, so URA is not added.
 - C/N0: mean C/N0 of the real GPS/BDS-3 observations in the same elevation bin
   (paper Fig. 5; Ref. [35] gives no elevation-C/N0 formula).
 - Orbit error variance of the filter (A25): mean square range error of the
@@ -57,7 +57,7 @@ import settings as cfg
 from earth_models import (EARTH_ROTATION_VECTOR, GPS_UTC_LEAP_SECONDS, SPEED_OF_LIGHT, earth_rotation_angle,
                           earth_rotation_angle_numba, elevation_azimuth, multipath_variance, norm, power,
                           receiver_noise_std)
-from gnss_measurements import EpochMeasurements, geometric_range, predict_pseudoranges
+from gnss_measurements import EpochMeasurements, geometric_range
 
 GPS_EPOCH_JULIAN_DATE = 2444244.5               # 1980-01-06 0h
 GRAVITY_FILE = Path(__file__).resolve().parent / 'egm96_degree20.txt'
@@ -392,40 +392,28 @@ def leo_orbits(times, receivers, orbit_names):
 
 
 
-# --- Measurement error model from real data ----------------------------------
+# --- C/N0 of the LEO satellites from real data -------------------------------
 def elevation_bin(elevation, bin_count):
     return np.minimum((np.rad2deg(elevation) // cfg.LEO_ELEVATION_BIN_DEG).astype(int), bin_count - 1)
 
 
-def real_error_bins(data, gnss_epochs, epochs):
-    """Per elevation bin of the real GPS/BDS-3 observations of the given epochs: (error shapes, mean C/N0).
+def mean_cn0_bins(data, gnss_epochs, epochs):
+    """Mean C/N0 of the real GPS/BDS-3 observations of the given epochs per elevation bin (A3).
 
-    error = pseudorange - Eq. (1) prediction at the truth antenna position, the
-    receiver clock of each system removed with the median of the epoch; the
-    shape is this error divided by its Eq. (3) standard deviation. Only the rows the
-    filter uses (GNSS_ELEVATION_MASK_DEG, A10). epochs: the training part of the training
-    dataset, or the whole testing dataset (A3).
+    Elevation at the truth antenna position; only the rows the filter uses (GNSS_ELEVATION_MASK_DEG, A10).
+    An empty bin takes the value of the nearest filled one. epochs: the training part of the training
+    dataset, or the whole testing dataset.
     """
     bin_count = int(np.ceil(90.0 / cfg.LEO_ELEVATION_BIN_DEG))
-    shapes, cn0 = [[] for _ in range(bin_count)], [[] for _ in range(bin_count)]
-    mask = np.deg2rad(cfg.GNSS_ELEVATION_MASK_DEG)
+    cn0 = [[] for _ in range(bin_count)]
     for k in epochs:
         meas = gnss_epochs[k]
-        predicted, _, elevation, variance = predict_pseudoranges(data.truth_antenna_position[k], meas,
-                                                                 data.fusion_times[k], data.klobuchar_alpha,
-                                                                 data.klobuchar_beta)
-        error = meas.pseudoranges - predicted
-        for system in ('G', 'C'):
-            rows = np.flatnonzero((meas.systems == system) & (elevation > 0.0) & (elevation >= mask))
-            if len(rows) < 2:
-                continue
-            for b, e, s, c in zip(elevation_bin(elevation[rows], bin_count), error[rows] - np.median(error[rows]),
-                                  np.sqrt(variance[rows]), meas.cn0[rows]):
-                shapes[b].append(e / s)
-                cn0[b].append(c)
-    filled = [b for b in range(bin_count) if shapes[b]]
-    nearest = [min(filled, key=lambda f: abs(f - b)) for b in range(bin_count)]
-    return [(np.array(shapes[f]), float(np.mean(cn0[f]))) for f in nearest]
+        elevation, _ = elevation_azimuth(data.truth_antenna_position[k], meas.satellite_positions)
+        rows = np.flatnonzero(elevation >= np.deg2rad(cfg.GNSS_ELEVATION_MASK_DEG))
+        for b, c in zip(elevation_bin(elevation[rows], bin_count), meas.cn0[rows]):
+            cn0[b].append(c)
+    filled = [b for b in range(bin_count) if cn0[b]]
+    return np.array([np.mean(cn0[min(filled, key=lambda f: abs(f - b))]) for b in range(bin_count)])
 
 
 # --- Measurement simulation --------------------------------------------------
@@ -444,8 +432,11 @@ def transmit_positions(receiver, position, velocity):
     return position - transit[:, None] * velocity
 
 
-def simulate_leo_measurements(data, error_bins, seed, orbit_names):
+def simulate_leo_measurements(data, cn0_bins, seed, orbit_names):
     """Simulated LEO pseudoranges at every fusion epoch, at the truth antenna position.
+
+    Noise (A3): receiver noise ~ Gaussian with the std of Eq. (3); MP/NLOS ~ Student-t with LEO_NOISE_DOF
+    degrees of freedom, scaled to the std of Eq. (4). The noise variance is then that of R.
 
     The pseudoranges (and their noise draws) are made once with the reference orbit; every
     filter orbit of orbit_names (A26) gets the same rows with its own satellite positions.
@@ -466,13 +457,12 @@ def simulate_leo_measurements(data, error_bins, seed, orbit_names):
         positions = transmit_positions(receiver, reference_position[:, k], reference_velocity[:, k])
         elevation, _ = elevation_azimuth(receiver, positions)
         visible = np.flatnonzero(elevation >= np.deg2rad(cfg.LEO_ELEVATION_MASK_DEG))
-        bins = elevation_bin(elevation[visible], len(error_bins))
-        cn0 = np.array([error_bins[b][1] for b in bins])
-        shape = np.array([error_bins[b][0][rng.integers(len(error_bins[b][0]))] for b in bins])
+        cn0 = cn0_bins[elevation_bin(elevation[visible], len(cn0_bins))]
         n = len(visible)
         true_range = geometric_range(receiver, positions[visible])
+        nu = cfg.LEO_NOISE_DOF
         noise = (receiver_noise_std(cn0, cfg.LEO_CODE_CHIP_RATE) * rng.standard_normal(n)
-                 + np.sqrt(multipath_variance(elevation[visible], cn0)) * shape)
+                 + np.sqrt(multipath_variance(elevation[visible], cn0) * (nu - 2.0) / nu) * rng.standard_t(nu, n))
         pseudoranges = true_range + noise
         for name in orbit_names:
             # Filter side: the filter orbit at the transmit time t - rho/c (clocks are ideal, A4).

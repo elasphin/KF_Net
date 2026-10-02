@@ -93,7 +93,8 @@ LEO_MIN_PERIGEE_ALTITUDE = 700e3   # m, lower satellites (e.g. still raising the
                                    # drag is not in the reference orbit                                 [choice A1]
 LIGHT_TIME_THRESHOLD = 1e-3        # m, epsilon_T of Eq. (5) step 3               [choice A1]
 LEO_ELEVATION_MASK_DEG = 10.0      # deg                                          [choice A2]
-LEO_ELEVATION_BIN_DEG = 10.0       # deg, bins for MP/NLOS shape and mean C/N0     [choice A3]
+LEO_ELEVATION_BIN_DEG = 10.0       # deg, bins for the mean C/N0                   [choice A3]
+LEO_NOISE_DOF = 5.0                # Student-t degrees of freedom of the LEO MP/NLOS noise (> 2; large = Gaussian) [choice A3]
 LEO_CODE_CHIP_RATE = 1.023e6       # chip/s, used by the receiver-noise term      [choice A3]
 LEO_NOISE_SEED = {'train': 1, 'test': 2}
 # LEO orbit used by the filter (A26): 'reference' = true orbit (the one the measurements are made with),

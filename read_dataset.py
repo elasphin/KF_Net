@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 import settings as cfg
-from earth_models import GPS_WEEK_SECONDS, ecef_to_llh, ecef_to_ned_matrix, gps_seconds
+from earth_models import GPS_UTC_LEAP_SECONDS, GPS_WEEK_SECONDS, ecef_to_llh, ecef_to_ned_matrix, gps_seconds
 
 IMR_HEADER_SIZE = 512
 TRUTH_TAIL_BYTES = 100_000         # end of a truth file read for its last time
@@ -158,22 +158,27 @@ def interpolate_truth(truth, times):
 
 # --- IMU (NovAtel Inertial Explorer .imr) ------------------------------------
 def read_imu(path: Path, reference_time: float):
-    """-> times (GPST), gyro [rad/s], accel [m/s^2]."""
+    """-> times (GPST), gyro [rad/s], accel [m/s^2].
+
+    Header flags used: delta theta / delta velocity (increments are multiplied by the rate) and the
+    time tag type (UTC tags are moved to GPST). The time tag bias is taken in ms.
+    """
     with path.open('rb') as f:
         header = f.read(IMR_HEADER_SIZE)
     endian = '<' if header[8] == 0 else '>'
     fields = struct.unpack(endian + '8scdiidddiid32s?BBB32s6h?iii354s', header)
-    rate, gyro_scale, accel_scale, time_bias_ms = fields[5], fields[6], fields[7], fields[10]
+    delta_theta, delta_velocity, rate, gyro_scale, accel_scale, time_type, time_bias_ms = (
+        fields[3], fields[4], fields[5], fields[6], fields[7], fields[8], fields[10])
     record = np.dtype([('tow', endian + 'f8'), ('counts', endian + 'i4', (6,))])
     data = np.fromfile(path, dtype=record, offset=IMR_HEADER_SIZE)
-    tow = data['tow'] - time_bias_ms * 1e-3
+    tow = data['tow'] - time_bias_ms * 1e-3 + (GPS_UTC_LEAP_SECONDS if time_type == 1 else 0.0)   # 1 = UTC, 2 = GPS
     tow[tow > GPS_WEEK_SECONDS] -= GPS_WEEK_SECONDS
     week_start = math.floor(reference_time / GPS_WEEK_SECONDS) * GPS_WEEK_SECONDS
     times = week_start + tow
     times[times - reference_time > GPS_WEEK_SECONDS / 2] -= GPS_WEEK_SECONDS
     times[times - reference_time < -GPS_WEEK_SECONDS / 2] += GPS_WEEK_SECONDS
-    gyro = np.deg2rad(data['counts'][:, 0:3] * gyro_scale * rate)
-    accel = data['counts'][:, 3:6] * accel_scale * rate
+    gyro = np.deg2rad(data['counts'][:, 0:3] * gyro_scale * (rate if delta_theta else 1.0))   # increments -> rates
+    accel = data['counts'][:, 3:6] * accel_scale * (rate if delta_velocity else 1.0)
     return times, gyro, accel
 
 
@@ -240,10 +245,12 @@ def read_rinex_observations(path: Path, start, stop, max_epochs=None):
 # --- Products ----------------------------------------------------------------
 def read_sp3(path: Path, first, last):
     """SP3 precise orbits with first <= time <= last (the file is in time order) -> {sat_id: (times, positions [m])}."""
-    orbits, time, time_system = {}, None, 'GPS'
+    orbits, time, time_system, first_c_line_read = {}, None, 'GPS', False
     for line in path.read_text(errors='replace').splitlines():
-        if line.startswith('%c') and line[9:12].strip():
-            time_system = line[9:12].strip()
+        if line.startswith('%c'):
+            if not first_c_line_read and line[9:12].strip():      # SP3-c/d: only the first %c line has it
+                time_system = line[9:12].strip()
+            first_c_line_read = True
         elif line.startswith('*'):
             v = line[1:].split()
             time = gps_seconds(*map(int, v[:5]), float(v[5]), time_system)

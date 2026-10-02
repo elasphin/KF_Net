@@ -63,11 +63,16 @@ def gps_seconds(year, month, day, hour, minute, second, time_system='GPS'):
     whole = int(math.floor(second))
     seconds = (datetime(year, month, day, hour, minute, whole, tzinfo=timezone.utc) - GPS_EPOCH).total_seconds()
     seconds += second - whole
-    if time_system.upper() in ('BDT', 'BDS'):
+    system = time_system.upper()
+    if system in ('GPS', 'GPST', 'GAL', 'GST', 'QZS', 'QZSST'):
+        return seconds
+    if system in ('BDT', 'BDS'):
         return seconds + 14.0
-    if time_system.upper() in ('UTC', 'GLO'):
+    if system in ('UTC', 'GLO'):
         return seconds + GPS_UTC_LEAP_SECONDS
-    return seconds
+    if system == 'TAI':
+        return seconds - 19.0
+    raise ValueError(f'unknown time system {time_system!r}')
 
 
 @njit(cache=True)
@@ -195,15 +200,21 @@ def klobuchar_delay(gps_time, latitude, longitude, elevation, azimuth, alpha, be
     return SPEED_OF_LIGHT * slant * (5e-9 + day)
 
 
-def saastamoinen_delay(height, elevation):
-    """Saastamoinen tropospheric delay [m] with the standard atmosphere (RTKLIB form)."""
-    h = np.clip(height, -100.0, 1e4)
-    temperature = 15.0 - 0.0065 * h + 273.15
+def saastamoinen_delay(latitude, height, elevation):
+    """Saastamoinen tropospheric delay [m] with the standard atmosphere, as RTKLIB tropmodel (rtkcmn.c).
+
+    Zero below the horizon or outside -100 m..10 km. The former form with the -1.16 tan^2(z) term is
+    valid only well above the horizon (it is negative below ~1.5 deg).
+    """
+    valid = (elevation > 0.0) & (height >= -100.0) & (height <= 1e4)
+    h = np.clip(height, 0.0, 1e4)
+    temperature = 15.0 - 6.5e-3 * h + 273.16
     pressure = 1013.25 * (1.0 - 2.2557e-5 * h) ** 5.2568
     humidity = 6.108 * 0.7 * np.exp((17.15 * temperature - 4684.0) / (temperature - 38.45))
-    zenith = np.pi / 2.0 - elevation
-    return 0.002277 / np.cos(zenith) * (pressure + (1255.0 / temperature + 0.05) * humidity
-                                        - 1.16 * np.tan(zenith) ** 2)
+    cos_zenith = np.cos(np.pi / 2.0 - np.maximum(elevation, 1e-3))
+    hydrostatic = 0.0022768 * pressure / (1.0 - 0.00266 * np.cos(2.0 * latitude) - 0.00028 * h / 1e3) / cos_zenith
+    wet = 0.002277 * (1255.0 / temperature + 0.05) * humidity / cos_zenith
+    return np.where(valid, hydrostatic + wet, 0.0)
 
 
 # --- Measurement variance, paper Eq. (3) --------------------------------------

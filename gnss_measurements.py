@@ -76,7 +76,7 @@ def predict_pseudoranges(antenna, meas: EpochMeasurements, time, alpha, beta):
     with np.errstate(invalid='ignore', divide='ignore'):
         iono = np.where(is_leo, 0.0, iono_scale * klobuchar_delay(time, latitude, longitude, elevation, azimuth,
                                                                    alpha, beta))
-        tropo = np.where(is_leo, 0.0, saastamoinen_delay(height, elevation))
+        tropo = np.where(is_leo, 0.0, saastamoinen_delay(latitude, height, elevation))
         leo_variance = (multipath_variance(elevation, meas.cn0) + receiver_noise_std(meas.cn0, chip_rate) ** 2
                         + meas.orbit_variance)
         variance = np.where(is_leo, leo_variance,

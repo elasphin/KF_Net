@@ -83,11 +83,16 @@ def mechanize(state: NavigationState, gyro, accel, dt) -> NavigationState:
 def propagate_ins(state, data, start_time, end_time):
     """INS from start_time to end_time with every IMU sample in between (paper Fig. 7).
 
-    Returns the new state, the mean measured specific force (for F) and the raw
-    IMU sample at end_time (alpha_k, w_k of paper Eq. (14)).
+    Each IMU sample is the mean rate over the interval that ends at its time tag, so the step up to
+    end_time inside the next interval uses the next sample (the one whose interval contains end_time).
+    Returns the new state, the mean measured specific force over those samples (for F) and the
+    last IMU sample at or before end_time (alpha_k, w_k of paper Eq. (14): no later sample is used).
     """
     first = np.searchsorted(data.imu_times, start_time, side='right')
     last = np.searchsorted(data.imu_times, end_time, side='right')      # samples [first, last) are <= end_time
+    if last == 0 or (last == len(data.imu_times) and end_time > data.imu_times[-1]):
+        raise ValueError(f'IMU samples ({data.imu_times[0]:.3f}..{data.imu_times[-1]:.3f}) do not cover '
+                         f'{start_time:.3f}..{end_time:.3f}')
     if cfg.INS_MECHANIZATION == 'python':
         time = start_time
         for i in range(first, last):
@@ -106,8 +111,8 @@ def propagate_ins(state, data, start_time, end_time):
         state = NavigationState(position, velocity, attitude, state.accel_bias, state.gyro_bias)
     else:
         raise ValueError(f"INS_MECHANIZATION must be 'python' or 'numba', not {cfg.INS_MECHANIZATION!r}")
-    samples = slice(first, last + 1)
-    return state, data.accel[samples].mean(axis=0), data.accel[last], data.gyro[last]
+    samples = slice(first, min(last + 1, len(data.imu_times)))
+    return state, data.accel[samples].mean(axis=0), data.accel[last - 1], data.gyro[last - 1]
 
 
 def error_matrix(state: NavigationState, specific_force):

@@ -53,7 +53,7 @@ KAGGLE_DATASET = 'elasphin/mknet-project'                      # [paper Sec. III
 PRODUCTS_FOLDER = DATASET_FOLDER / 'products'   # SP3, CLK, brdm if not in the data folder; then DATASET_FOLDER itself
 TRAIN_FOLDER_NAME = 'Data01_20230102_ISA-100C_Vehicle_Complex'  # training set (~150 min, Table I)
 TEST_FOLDER_NAME = 'Data02_20220309_ISA-100C_Vehicle_Complex'   # testing set (~110 min, Table I)
-MAX_FUSION_EPOCHS = {'train': 100, 'test': 50}   # first fusion epochs of each dataset; None = all (paper)
+MAX_FUSION_EPOCHS = {'train': 4500, 'test': 1000}   # first fusion epochs of each dataset; None = all (paper)
 RANDOM_SEED = 0
 
 # --- IMU error model (paper Table II) ----------------------------------------
@@ -116,7 +116,7 @@ MASK_EPSILON = 1e-6                # epsilon of Eq. (22)                        
 
 # --- Training (paper Sec. II-C, Table III, Fig. 15) --------------------------
 LEARNING_RATE = 0.01               # Adam                                         [paper Table III, Sec. III-B]
-TRAINING_EPOCHS = 5             # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
+TRAINING_EPOCHS = 300             # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
 L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                            [choice A14]
 BACKPROP_WINDOW = 10               # fusion epochs per truncated back-propagation [choice A15]
 VALIDATION_FRACTION = 0.2          # last 20 % of the training dataset            [choice A21]

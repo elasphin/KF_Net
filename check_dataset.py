@@ -11,7 +11,8 @@ each result. Sections:
   4. INS over each 1 s fusion interval from the truth, for several IMU time offsets (attitude convention,
      mounting, IMU scale and time tags: a wrong one gives a large velocity error or a non-zero best offset)
   5. free INS from the truth over 10 / 30 / 60 / 100 s
-  6. GPS / BDS-3 / LEO pseudorange residuals at the truth antenna (receiver clock of each system removed)
+  6. GPS / BDS-3 / LEO pseudorange residuals at the truth antenna (receiver clock of each system removed),
+     also the mean residual of each GPS / BDS-3 satellite
   7. filter baselines on the training and validation parts of train.py: free INS, EKF with GNSS only,
      EKF with GNSS + LEO and, if outputs/masked_cla_network.pt exists, the network
 """
@@ -23,7 +24,7 @@ import numpy as np
 import torch
 
 import settings as cfg
-from data_cache import load_dataset
+from data_cache import load_dataset, training_split
 from earth_models import EARTH_ROTATION_VECTOR, ecef_to_llh, ecef_to_ned_matrix, gravity, rotation_matrix_to_vector, skew
 from gnss_measurements import predict_pseudoranges
 from ins_filter import propagate_ins, truth_state
@@ -69,15 +70,15 @@ def imr_header(folder, imu_type):
 def truth_columns(folder, imu_type):
     print('\n2. Truth files (read_dataset.truth_row reads: 0 week, 1 seconds, 9:12 ECEF position, '
           '15:18 ECEF velocity, 21:24 heading/pitch/roll)')
-    for path in sorted(folder.glob('*GroundTruth.txt')):
-        with path.open(errors='replace') as f:
-            lines = [next(f, '') for _ in range(60)]
-        header = [line.rstrip() for line in lines if line.strip() and not line.split()[0].isdigit()]
-        first = next((line.split() for line in lines if line.split() and line.split()[0].isdigit()), [])
-        print(f'   {path.name}:')
-        for line in header[-4:]:
-            print(f'      | {line[:160]}')
-        print('      ' + '  '.join(f'[{i}]{v}' for i, v in enumerate(first)))
+    print(f"   files: {', '.join(p.name for p in sorted(folder.glob('*GroundTruth.txt')))}")
+    with (folder / f'{imu_type}_GroundTruth.txt').open(errors='replace') as f:
+        lines = [next(f, '') for _ in range(60)]
+    names = next((line.split() for line in lines if 'X-ECEF' in line), [])
+    first = next((line.split() for line in lines if line.split() and line.split()[0].isdigit()), [])
+    print(f'   {imu_type}_GroundTruth.txt, column [index] name = first value:')
+    for i in range(0, len(first), 6):
+        print('      ' + '  '.join(f'[{j}] {names[j] if j < len(names) else "?"} = {first[j]}'
+                                    for j in range(i, min(i + 6, len(first)))))
 
 
 def truth_consistency(data):
@@ -86,8 +87,12 @@ def truth_consistency(data):
     derivative = (data.truth_position[2:] - data.truth_position[:-2]) / (t[2:] - t[:-2])[:, None]
     print(f'   |truth velocity - d(truth position)/dt| [m/s]: '
           f'{stats(np.linalg.norm(data.truth_velocity[1:-1] - derivative, axis=1))}   (expected < 0.05)')
-    print(f'   speed [m/s]: min {np.linalg.norm(data.truth_velocity, axis=1).min():.2f}  '
-          f'max {np.linalg.norm(data.truth_velocity, axis=1).max():.2f}')
+    speed = np.linalg.norm(data.truth_velocity, axis=1)
+    print(f'   speed [m/s]: min {speed.min():.2f}  max {speed.max():.2f}')
+    if speed.max() < 0.1:
+        print('   !!! the vehicle does not move in these epochs: the velocity columns, the IMU time offset and the '
+              'dynamics are not tested (and training on them teaches the network nothing about driving); '
+              'set a larger MAX_FUSION_EPOCHS')
     lever = np.einsum('kij,j->ki', data.truth_attitude, data.lever_arm)
     difference = np.array([ned(data, k, data.truth_antenna_position[k] - data.truth_position[k] - lever[k])
                            for k in range(len(t))])
@@ -96,7 +101,7 @@ def truth_consistency(data):
           f'   (expected < 0.1)')
 
 
-def one_second_ins(data, full_imu):
+def one_second_ins(data, full_imu, mounting):
     print('\n4. INS over each fusion interval from the truth (velocity error at the end of the interval, m/s)')
     print('   expected: smallest at offset 0, RMS < 0.01 m/s for a navigation-grade IMU')
     results = []
@@ -130,6 +135,13 @@ def one_second_ins(data, full_imu):
         print(f'   static epochs ({len(static)}): measured specific force {np.round(force, 4)}, from truth attitude '
               f'{np.round(expected_force, 4)} m/s^2, angle {angle:.3f} deg (expected < 0.05)')
         print(f'   gyro mean - Earth rate in body: {np.round(np.rad2deg(rate - expected_rate) * 3600.0, 2)} deg/h')
+        difference = force - expected_force
+        print(f'   measured - expected specific force: {np.round(difference / 9.80665 * 1e3, 2)} mg; a constant error '
+              f'a gives a free-INS error of a t^2 / 2 = {0.5 * np.linalg.norm(difference) * 100.0 ** 2:.0f} m at 100 s. '
+              f'It is an accelerometer bias or a tilt of {np.rad2deg(np.linalg.norm(difference) / 9.8):.3f} deg; '
+              f'the filter starts with sigma {np.round(data.accel_bias_std / 9.80665 * 1e3, 3)} mg (bias) and '
+              f'{np.rad2deg(cfg.INITIAL_ATTITUDE_STD):.3g} deg (attitude)')
+        print(f'   README.xml SINS_RotAngle_IMU (mounting) {mounting} deg')
     else:
         print('   no static epochs (speed < 0.02 m/s) in this span')
 
@@ -149,7 +161,7 @@ def free_ins(data):
 
 def residuals(data, measurements):
     print('\n6. Pseudorange residuals at the truth antenna, receiver clock of GPS and BDS-3 removed (median), m')
-    errors, counts = {'G': [], 'C': [], 'L': []}, {'G': [], 'C': [], 'L': []}
+    errors, counts, satellites = {'G': [], 'C': [], 'L': []}, {'G': [], 'C': [], 'L': []}, {}
     for k, meas in enumerate(measurements):
         predicted, _, elevation, _ = predict_pseudoranges(data.truth_antenna_position[k], meas, data.fusion_times[k],
                                                           data.klobuchar_alpha, data.klobuchar_beta)
@@ -161,6 +173,10 @@ def residuals(data, measurements):
                 errors[system] += list(error[rows] - np.median(error[rows]))
             elif len(rows):
                 errors[system] += list(error[rows])
+            if system != 'L' and len(rows):
+                for i in rows:
+                    satellites.setdefault(meas.sat_ids[i], []).append(
+                        (error[i] - np.median(error[rows]), np.rad2deg(elevation[i]), meas.cn0[i]))
     for system, name in (('G', 'GPS'), ('C', 'BDS-3'), ('L', 'LEO')):
         if errors[system]:
             e = np.array(errors[system])
@@ -168,12 +184,17 @@ def residuals(data, measurements):
                   f'satellites per epoch: {np.mean(counts[system]):.1f} (min {min(counts[system])}, '
                   f'max {max(counts[system])})')
     print('   expected: GPS / BDS-3 a few m (more in the urban parts), no large mean; LEO about 1-3 m')
+    print('   per GPS / BDS-3 satellite: mean residual [m], mean elevation [deg], mean C/N0 [dB-Hz], epochs')
+    for sat_id, values in sorted(satellites.items()):
+        e, elevation, cn0 = np.array(values).T
+        print(f'      {sat_id}  {e.mean():+7.2f}  {elevation.mean():5.1f}  {cn0.mean():5.1f}  {len(e)}'
+              f"{'   !!!' if abs(e.mean()) > 10 else ''}")
 
 
 def baselines(data, measurements):
     print('\n7. Filter baselines on the training / validation parts of train.py, 3-D antenna RMSE [m]')
     last = len(data.fusion_times) - 1
-    split = int(round(last * (1.0 - cfg.VALIDATION_FRACTION)))
+    split = training_split(len(data.fusion_times))
     only_gnss = [m.subset(np.flatnonzero(m.systems != 'L')) for m in measurements]
     nothing = [m.subset(np.array([], dtype=int)) for m in measurements]
     network = None
@@ -195,7 +216,7 @@ def baselines(data, measurements):
 def main():
     split = sys.argv[1] if len(sys.argv) > 1 else 'train'
     folder = find_dataset_folder(cfg.TRAIN_FOLDER_NAME if split == 'train' else cfg.TEST_FOLDER_NAME)
-    imu_type = read_rover_info(folder / 'README.xml')[0]
+    imu_type, mounting, _ = read_rover_info(folder / 'README.xml')
     data, orbits = load_dataset(split)
     measurements = orbits[cfg.LEO_TRAIN_ORBIT if split == 'train' else cfg.LEO_TEST_ORBITS[0]]
     print(f'{data.name}: {len(data.fusion_times)} fusion epochs, '
@@ -205,7 +226,7 @@ def main():
     imr_header(folder, imu_type)
     truth_columns(folder, imu_type)
     truth_consistency(data)
-    one_second_ins(data, read_imu(folder / f'{imu_type}.imr', data.fusion_times[0]))
+    one_second_ins(data, read_imu(folder / f'{imu_type}.imr', data.fusion_times[0]), mounting)
     free_ins(data)
     residuals(data, measurements)
     baselines(data, measurements)

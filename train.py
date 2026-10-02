@@ -21,7 +21,7 @@ import numpy as np
 import torch
 
 import settings as cfg
-from data_cache import load_dataset
+from data_cache import load_dataset, training_split
 from ins_filter import STATE_SIZE
 from masked_cla_network import FIXED_FEATURE_SIZE, MaskedCLANetwork
 from navigation_filter import run_filter
@@ -48,7 +48,7 @@ def main():
     data, orbits = load_dataset('train')
     measurements = orbits[cfg.LEO_TRAIN_ORBIT]
     last = len(data.fusion_times) - 1
-    split = int(round(last * (1.0 - cfg.VALIDATION_FRACTION)))       # train: 0..split, validation: split..last
+    split = training_split(len(data.fusion_times))                  # train: 0..split, validation: split..last
     max_measurements = max(len(m) for m in measurements[:split + 1])  # N_max of Eq. (16)
 
     # Output scale of the gain rows from a traditional EKF on the training part (A11).

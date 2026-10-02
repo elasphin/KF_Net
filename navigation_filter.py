@@ -16,7 +16,7 @@ import torch
 from scipy.stats import chi2
 
 import settings as cfg
-from earth_models import ecef_to_llh, ecef_to_ned_matrix
+from earth_models import ecef_to_llh, ecef_to_ned_matrix, skew
 from ins_filter import (STATE_SIZE, apply_correction, classical_gain, error_matrix, initial_covariance,
                         joseph_covariance, measurement_model, process_noise, propagate_ins, state_difference,
                         transition_matrix, truth_state)
@@ -72,11 +72,16 @@ def adapt_to_faults(dx, P_prior, K, H, R, innovation, projector, faulty, Q_inver
     return dx - L @ innovation, joseph_covariance(P_prior, K - L, H, R)
 
 
-def protection_levels(P, position):
-    """Horizontal and vertical protection levels K * sigma from the position covariance (A17)."""
-    latitude, longitude, _ = ecef_to_llh(position)
+def protection_levels(P, state, lever_arm):
+    """Horizontal and vertical protection levels K * sigma of the antenna position (A17).
+
+    The antenna error is dp - (C l) x dtheta (ins_filter.measurement_model), so its covariance is J P J^T.
+    """
+    J = np.zeros((3, STATE_SIZE))
+    J[:, 0:3], J[:, 6:9] = np.eye(3), -skew(state.attitude @ lever_arm)
+    latitude, longitude, _ = ecef_to_llh(state.position)
     C = ecef_to_ned_matrix(latitude, longitude)
-    P_ned = C @ P[0:3, 0:3] @ C.T
+    P_ned = C @ J @ P @ J.T @ C.T
     half_sum, half_difference = 0.5 * (P_ned[0, 0] + P_ned[1, 1]), 0.5 * (P_ned[0, 0] - P_ned[1, 1])
     horizontal_major = half_sum + np.hypot(half_difference, P_ned[0, 1])
     return cfg.HORIZONTAL_PL_FACTOR * np.sqrt(horizontal_major), cfg.VERTICAL_PL_FACTOR * np.sqrt(P_ned[2, 2])
@@ -101,20 +106,25 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
     """Filter over fusion epochs first..last, starting from the truth at 'first' (A7).
 
     network=None: traditional EKF gain, with at most max_measurements rows (A16).
-    training=True: accumulates the gradient of the Eq. (32) loss. The gradient of a correction dx_k also reaches later epochs
-    through the linear error propagation Phi (a correction at k shifts the prior
-    at k+1 by Phi dx_k), truncated every BACKPROP_WINDOW epochs (A15).
+    training=True: accumulates the gradient of the Eq. (32) loss (A15). The filter runs in NumPy; the gradient
+    follows its linearization: 'link' is the shift of the prior state caused by the earlier corrections
+    (a correction at k shifts the prior at k+1 by Phi dx_k), the innovation shifts by -H link, so
+    dx_k = K_k (nu_k - H_k link_k) gives the sensitivity (I - K H) Phi S + (dK/dtheta) nu, and the network
+    inputs of the next epoch (innovation, residual after the update, state residual and state innovation)
+    carry the same shift. The gradient is truncated every BACKPROP_WINDOW epochs.
+    The loss counts every epoch, also those without a usable measurement (no correction).
     The covariance P is used only by the EKF gain, the fault detection and the protection
     levels; a network run without fault detection (training, validation) leaves it out and
     returns NaN protection levels.
     """
     last = len(data.fusion_times) - 1 if last is None else last
     times = data.fusion_times
-    state, P = truth_state(data, first), initial_covariance()
-    i = np.searchsorted(data.imu_times, times[first], side='right')
-    previous = {'accel': data.accel[i], 'gyro': data.gyro[i], 'state': state, 'residuals': {},
-                'state_residual': np.zeros(STATE_SIZE), 'state_innovation': np.zeros(STATE_SIZE)}
-    hidden, link, window_loss, loss_sum = None, torch.zeros(STATE_SIZE, dtype=torch.float64), 0.0, 0.0
+    state, P = truth_state(data, first), initial_covariance(data)
+    i = np.searchsorted(data.imu_times, times[first], side='right') - 1            # last IMU sample <= start
+    no_shift = torch.zeros(STATE_SIZE, dtype=torch.float64)
+    previous = {'accel': data.accel[i], 'gyro': data.gyro[i], 'state': state, 'residuals': {}, 'shift': no_shift,
+                'state_residual': no_shift, 'state_innovation': no_shift}
+    hidden, link, window_loss, loss_sum = None, no_shift, 0.0, 0.0
     if network is not None:
         network.train(training)
     rows, gain_square_sum, gain_columns = [], np.zeros(STATE_SIZE), 0
@@ -126,9 +136,10 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
         if covariance:
             P = Phi @ P @ Phi.T + process_noise(Phi, times[k] - times[k - 1])
         link = torch.from_numpy(Phi) @ link
+        shift = link - link.detach()                   # value 0, gradient d(prior)/d(theta)
         model = measurement_model(state, measurements[k], data.lever_arm, times[k], data.klobuchar_alpha,
                                   data.klobuchar_beta, max_measurements if network is None else network.max_measurements)
-        dx, faulty_satellite, count = np.zeros(STATE_SIZE), '', 0
+        dx, dx_tensor, faulty_satellite, count = np.zeros(STATE_SIZE), no_shift, '', 0
         if model is not None:
             nu, H, R = model.innovation, model.H, model.R
             count = len(nu)
@@ -136,17 +147,12 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
                 K = classical_gain(P, H, R)
                 dx = K @ nu
             else:
-                features, length = build_network_input(previous, model.measurements.sat_ids, nu, accel, gyro,
-                                                       network.max_measurements)
                 with torch.set_grad_enabled(training):
-                    gain, hidden = network(torch.tensor(features, dtype=torch.float32), length, count, hidden)
-                    dx_tensor = gain[:, :count].double() @ torch.from_numpy(nu)
-                    prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:3])
-                    error = prior_error - (link - link.detach())[:3] - dx_tensor[:3]   # p_k - (p_k,k-1 + K dy_k)
-                    loss = error @ error / (error.numel() * (last - first))   # MSE of Eq. (30), Table III
-                    window_loss = window_loss + loss
-                    link = link + dx_tensor
-                loss_sum += loss.item()
+                    innovation = torch.from_numpy(nu) - torch.from_numpy(H) @ shift
+                    features, length = build_network_input(previous, model.measurements.sat_ids, innovation, accel,
+                                                           gyro, network.max_measurements)
+                    gain, hidden = network(features.float(), length, count, hidden)
+                    dx_tensor = gain[:, :count].double() @ innovation
                 K, dx = gain.detach().double().numpy()[:, :count], dx_tensor.detach().numpy()
             if covariance:
                 P_posterior = joseph_covariance(P, K, H, R)
@@ -159,25 +165,41 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
             gain_square_sum += np.sum(K ** 2, axis=1)
             gain_columns += count
 
+        if network is not None:
+            with torch.set_grad_enabled(training):
+                prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:3])
+                error = prior_error - shift[:3] - dx_tensor[:3]           # p_k - (p_k,k-1 + K dy_k)
+                loss = error @ error / (error.numel() * (last - first))   # MSE of Eq. (30), Table III
+                window_loss = window_loss + loss
+                link = link + dx_tensor
+            loss_sum += loss.item()
+
         new_state = apply_correction(state, dx)
-        if model is not None:                          # network input of epoch k+1, paper Eq. (11)-(14)
-            after = measurement_model(new_state, model.measurements, data.lever_arm, times[k],
-                                      data.klobuchar_alpha, data.klobuchar_beta)
-            previous = {'accel': accel, 'gyro': gyro, 'state': new_state,
-                        'residuals': {} if after is None else dict(zip(after.measurements.sat_ids, after.innovation)),
-                        'state_residual': state_difference(new_state, previous['state']),       # Eq. (13)
-                        'state_innovation': dx}                                                   # Eq. (12)
+        if network is not None:                        # network input of epoch k+1, paper Eq. (11)-(14)
+            with torch.set_grad_enabled(training):
+                after = None if model is None else measurement_model(
+                    new_state, model.measurements, data.lever_arm, times[k], data.klobuchar_alpha, data.klobuchar_beta)
+                new_shift = link - link.detach()
+                residuals = ({} if after is None else dict(zip(
+                    after.measurements.sat_ids, torch.from_numpy(after.innovation) - torch.from_numpy(after.H) @ new_shift)))
+                previous = {'accel': accel, 'gyro': gyro, 'state': new_state, 'residuals': residuals, 'shift': new_shift,
+                            'state_residual': (torch.from_numpy(state_difference(new_state, previous['state']))
+                                               + new_shift - previous['shift']),                        # Eq. (13)
+                            'state_innovation': torch.from_numpy(dx) + dx_tensor - dx_tensor.detach()}  # Eq. (12)
         state = new_state
 
         if training and (k % cfg.BACKPROP_WINDOW == 0 or k == last):
-            if torch.is_tensor(window_loss):
+            if torch.is_tensor(window_loss) and window_loss.requires_grad:
                 window_loss.backward()
-            window_loss, link = 0.0, torch.zeros(STATE_SIZE, dtype=torch.float64)
+            window_loss, link = 0.0, no_shift
             hidden = None if hidden is None else tuple(h.detach() for h in hidden)
+            previous = {name: value.detach() if torch.is_tensor(value) else value for name, value in previous.items()}
+            previous['residuals'] = {s: value.detach() for s, value in previous['residuals'].items()}
+            previous['shift'] = no_shift
 
         antenna, truth = state.position + state.attitude @ data.lever_arm, data.truth_antenna_position[k]
         rows.append((times[k], ecef_to_ned_matrix(*ecef_to_llh(truth)[:2]) @ (antenna - truth),
-                     *(protection_levels(P, state.position) if covariance else (np.nan, np.nan)), count,
+                     *(protection_levels(P, state, data.lever_arm) if covariance else (np.nan, np.nan)), count,
                      faulty_satellite))
 
     ned_error = np.array([r[1] for r in rows])

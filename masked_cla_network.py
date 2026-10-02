@@ -1,5 +1,4 @@
 """Masked CLA KalmanNet (paper Sec. II-B, Fig. 8, Table III) and its input vector."""
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -16,15 +15,16 @@ def build_network_input(previous, sat_ids, innovation, accel, gyro, max_measurem
     previous: quantities of epoch k-1 ('accel', 'gyro', 'state_residual' Eq. (13),
     'state_innovation' Eq. (12), 'residuals' Eq. (11) as {sat_id: value}).
     A satellite that was not used at k-1 has lagged residual 0 (ASSUMPTIONS.md A12).
-    Returns the padded vector (length 36 + 2 N_max) and the number of valid entries (mask, Eq. (17)).
+    The state and measurement quantities are float64 tensors; in training they carry the gradient of the
+    earlier corrections (navigation_filter.run_filter, A15).
+    Returns the padded vector (tensor, length 36 + 2 N_max) and the number of valid entries (mask, Eq. (17)).
     """
-    lagged_residual = [previous['residuals'].get(s, 0.0) for s in sat_ids]
-    values = np.concatenate([accel - previous['accel'], gyro - previous['gyro'],            # Eq. (14)
-                             previous['state_residual'], previous['state_innovation'],       # Eq. (13), (12)
-                             lagged_residual, innovation])                                   # Eq. (11), (10)
-    features = np.zeros(FIXED_FEATURE_SIZE + 2 * max_measurements)
-    features[:len(values)] = values
-    return features, len(values)
+    zero = torch.zeros((), dtype=torch.float64)
+    lagged_residual = [previous['residuals'].get(s, zero) for s in sat_ids]
+    values = torch.cat([torch.from_numpy(accel - previous['accel']), torch.from_numpy(gyro - previous['gyro']),  # Eq. (14)
+                        previous['state_residual'], previous['state_innovation'],                            # Eq. (13), (12)
+                        torch.stack(lagged_residual), innovation])                                           # Eq. (11), (10)
+    return F.pad(values, (0, FIXED_FEATURE_SIZE + 2 * max_measurements - len(values))), len(values)
 
 
 class MaskedCLANetwork(nn.Module):

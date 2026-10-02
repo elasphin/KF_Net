@@ -30,10 +30,11 @@ class NavigationState:
     gyro_bias: np.ndarray       # [rad/s]
 
 
-def initial_covariance():
+def initial_covariance(data):
+    """P_0 (A7): truth accuracy, settings for velocity and attitude, bias sigmas of the dataset's IMU error model."""
     return np.diag(np.concatenate([np.full(3, cfg.INITIAL_POSITION_STD), np.full(3, cfg.INITIAL_VELOCITY_STD),
-                                   np.full(3, cfg.INITIAL_ATTITUDE_STD), np.full(3, cfg.ACCEL_BIAS_INSTABILITY),
-                                   np.full(3, cfg.GYRO_BIAS_INSTABILITY)]) ** 2)
+                                   np.full(3, cfg.INITIAL_ATTITUDE_STD), data.accel_bias_std,
+                                   data.gyro_bias_std]) ** 2)
 
 
 def noise_density():
@@ -83,11 +84,16 @@ def mechanize(state: NavigationState, gyro, accel, dt) -> NavigationState:
 def propagate_ins(state, data, start_time, end_time):
     """INS from start_time to end_time with every IMU sample in between (paper Fig. 7).
 
-    Returns the new state, the mean measured specific force (for F) and the raw
-    IMU sample at end_time (alpha_k, w_k of paper Eq. (14)).
+    Each IMU sample is the mean rate over the interval that ends at its time tag, so the step up to
+    end_time inside the next interval uses the next sample (the one whose interval contains end_time).
+    Returns the new state, the mean measured specific force over those samples (for F) and the
+    last IMU sample at or before end_time (alpha_k, w_k of paper Eq. (14): no later sample is used).
     """
     first = np.searchsorted(data.imu_times, start_time, side='right')
     last = np.searchsorted(data.imu_times, end_time, side='right')      # samples [first, last) are <= end_time
+    if last == 0 or (last == len(data.imu_times) and end_time > data.imu_times[-1]):
+        raise ValueError(f'IMU samples ({data.imu_times[0]:.3f}..{data.imu_times[-1]:.3f}) do not cover '
+                         f'{start_time:.3f}..{end_time:.3f}')
     if cfg.INS_MECHANIZATION == 'python':
         time = start_time
         for i in range(first, last):
@@ -106,8 +112,8 @@ def propagate_ins(state, data, start_time, end_time):
         state = NavigationState(position, velocity, attitude, state.accel_bias, state.gyro_bias)
     else:
         raise ValueError(f"INS_MECHANIZATION must be 'python' or 'numba', not {cfg.INS_MECHANIZATION!r}")
-    samples = slice(first, last + 1)
-    return state, data.accel[samples].mean(axis=0), data.accel[last], data.gyro[last]
+    samples = slice(first, min(last + 1, len(data.imu_times)))
+    return state, data.accel[samples].mean(axis=0), data.accel[last - 1], data.gyro[last - 1]
 
 
 def error_matrix(state: NavigationState, specific_force):
@@ -160,11 +166,16 @@ def clock_projector(systems, variance):
 
 
 def measurement_model(state, meas: EpochMeasurements, lever_arm, time, alpha, beta, max_count=None):
-    """Tightly coupled pseudorange model (paper Eq. (9)-(10)); None if no usable row."""
+    """Tightly coupled pseudorange model (paper Eq. (9)-(10)); None if no usable row.
+
+    GPS/BDS-3 rows at or above GNSS_ELEVATION_MASK_DEG (A10); LEO rows above the horizon (their mask is
+    applied when they are simulated, A2).
+    """
     lever_ecef = state.attitude @ lever_arm
     antenna = state.position + lever_ecef
     predicted, line_of_sight, elevation, variance = predict_pseudoranges(antenna, meas, time, alpha, beta)
-    rows = np.flatnonzero(elevation > 0.0)
+    mask = np.where(meas.systems == 'L', 0.0, np.deg2rad(cfg.GNSS_ELEVATION_MASK_DEG))  # LEO: mask of the simulation
+    rows = np.flatnonzero((elevation > 0.0) & (elevation >= mask))
     if max_count is not None and len(rows) > max_count:                  # A16: keep the highest satellites
         rows = np.sort(rows[np.argsort(-elevation[rows])[:max_count]])
     counts = {s: np.sum(meas.systems[rows] == s) for s in SYSTEM_ORDER}

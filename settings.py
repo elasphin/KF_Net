@@ -6,7 +6,7 @@ GNSS/LEO/INS Integrated Navigation System", IEEE IoT Journal, vol. 13, no. 11, 2
 Every value carries a source tag:
     [paper ...]   value given in the paper (equation, table, figure or text)
     [ref N]       value given in reference [N] of the paper
-    [choice AX]   not given by the paper; see item AX in ASSUMPTIONS.md
+    [choice AX]   not given by the paper; see item AX in docs/ASSUMPTIONS.md
 
 python settings.py shows the dataset and output folders of the current environment.
 """
@@ -83,7 +83,7 @@ DLL_BANDWIDTH = 2.0                # Hz                                         
 DLL_CORRELATOR_SPACING = 0.1       # chip                                         [ref 35]
 DLL_INTEGRATION_TIME = 0.02        # s                                            [ref 35]
 
-# --- LEO signals of opportunity (paper Sec. II-A; ASSUMPTIONS.md A1-A4, A24-A26) ---
+# --- LEO signals of opportunity (paper Sec. II-A; docs/ASSUMPTIONS.md A1-A4, A24-A26) ---
 LEO_TLE_FOLDER_NAME = 'LEO_TLE'    # TLE files (*.txt) of the LEO satellites, inside the dataset folder [choice A1]
 LEO_TLE_MIN_AGE = 0.0              # h, predictor uses the latest TLE published this long before the start [choice A1]
 LEO_MAX_TLE_MISMATCH = 10e3        # m, predictor vs reference TLE at the reference epoch; larger = manoeuvre,

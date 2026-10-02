@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch import nn
 
 import settings as cfg
-from ins_filter import STATE_SIZE
+from navigation.ins_filter import STATE_SIZE
 
 FIXED_FEATURE_SIZE = 6 + 2 * STATE_SIZE      # [d_alpha(3), d_w(3), dx_hat(15), dx_tilde(15)] = 36
 
@@ -14,7 +14,7 @@ def build_network_input(previous, sat_ids, innovation, accel, gyro, max_measurem
 
     previous: quantities of epoch k-1 ('accel', 'gyro', 'state_residual' Eq. (13),
     'state_innovation' Eq. (12), 'residuals' Eq. (11) as {sat_id: value}).
-    A satellite that was not used at k-1 has lagged residual 0 (ASSUMPTIONS.md A12).
+    A satellite that was not used at k-1 has lagged residual 0 (docs/ASSUMPTIONS.md A12).
     The state and measurement quantities are float64 tensors; in training they carry the gradient of the
     earlier corrections (navigation_filter.run_filter, A15).
     Returns the padded vector (tensor, length 36 + 2 N_max) and the number of valid entries (mask, Eq. (17)).

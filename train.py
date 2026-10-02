@@ -21,10 +21,10 @@ import numpy as np
 import torch
 
 import settings as cfg
-from data_cache import load_dataset, training_split
-from ins_filter import STATE_SIZE
-from masked_cla_network import FIXED_FEATURE_SIZE, MaskedCLANetwork
-from navigation_filter import run_filter
+from data_io.data_cache import load_dataset, training_split
+from navigation.ins_filter import STATE_SIZE
+from navigation.masked_cla_network import FIXED_FEATURE_SIZE, MaskedCLANetwork
+from navigation.navigation_filter import run_filter
 
 CHECKPOINT_FILE = cfg.OUTPUT_FOLDER / 'masked_cla_network.pt'
 

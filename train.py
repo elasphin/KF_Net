@@ -7,7 +7,7 @@
 An interrupted training continues after its last epoch when train.py runs again with the same
 settings, code and data (train.py, outputs/training_state.pt).
 
-Training exactly as in the paper (branch exp/paper), nothing added:
+Training exactly as in the paper (main; the exp/... branches change one thing), nothing added:
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
 averaged over the epochs and the three components (MSE, Table III) plus

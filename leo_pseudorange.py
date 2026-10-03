@@ -399,8 +399,7 @@ def mean_cn0_bins(data, gnss_epochs, epochs):
     """Mean C/N0 of the real GPS/BDS-3 observations of the given epochs per elevation bin (A3).
 
     Elevation at the truth antenna position; only the rows the filter uses (GNSS_ELEVATION_MASK_DEG, A10).
-    An empty bin takes the value of the nearest filled one. epochs: the training part of the training
-    dataset, or the whole testing dataset.
+    An empty bin takes the value of the nearest filled one. epochs: the whole dataset (dataset).
     """
     bin_count = int(np.ceil(90.0 / cfg.LEO_ELEVATION_BIN_DEG))
     cn0 = [[] for _ in range(bin_count)]
@@ -481,10 +480,10 @@ def range_error_summary(range_errors):
 def orbit_error_variance(range_errors, split):
     """sigma^2 of the orbit error in the filter R (A25), the same for every filter orbit (A26).
 
-    range_errors: {filter orbit name: range errors} (train: of the training part only, A21; test: of the whole
-    dataset). Writes leo_orbit_error_<split>.json (train: RMS, mean and samples of LEO_TRAIN_ORBIT; test: the
-    same for each test orbit) and returns the mean square range error of LEO_TRAIN_ORBIT on the training part
-    of the training dataset (written by train.py; zero for the reference orbit).
+    range_errors: {filter orbit name: range errors} of the whole dataset. Writes leo_orbit_error_<split>.json
+    (train: RMS, mean and samples of LEO_TRAIN_ORBIT; test: the same for each test orbit) and returns the mean
+    square range error of LEO_TRAIN_ORBIT on the training dataset (written by train.py; zero for the reference
+    orbit).
     """
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
     train_file = cfg.OUTPUT_FOLDER / 'leo_orbit_error_train.json'

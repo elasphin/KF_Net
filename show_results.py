@@ -33,7 +33,7 @@ from matplotlib.colors import LogNorm
 
 import settings as cfg
 
-TRAIN_COLOR, VALIDATION_COLOR = '#1baf7a', '#4a3aa7'
+TRAIN_COLOR = '#1baf7a'
 METHOD_COLORS = {'masked_cla_kalmannet': '#2a78d6', 'traditional_ekf': '#eb6834'}
 AXES = (('North', 'north_error_m'), ('East', 'east_error_m'), ('Down', 'down_error_m'))
 REGIONS = ('NO', 'MI', 'HO', 'SU', 'SU&MI')
@@ -50,9 +50,9 @@ import settings as cfg
 
 
 def find_experiments(root):
-    """{name: folder} of every experiment under root, exp/paper first."""
+    """{name: folder} of every experiment under root, main (training as the paper) first."""
     folders = {path.parent.relative_to(root).as_posix(): path.parent for path in root.rglob('training_info.json')}
-    return dict(sorted(folders.items(), key=lambda item: (item[0] != 'paper', item[0])))
+    return dict(sorted(folders.items(), key=lambda item: (item[0] not in ('main', 'paper'), item[0] != 'main', item[0])))
 
 
 def read_experiment(folder):
@@ -200,7 +200,6 @@ def test_lines(orbit):
 lines = [
     'DATA',
     f"  training samples (epochs)   {info['training_samples']}",
-    f"  validation samples          {info['validation_samples']}",
     f"  test samples                {test[orbits[0]]['masked_cla_kalmannet']['epochs']}",
     f"  LEO orbit, training         {info['leo_train_orbit']}",
     f"  max measurements N_max      {info['max_measurements']}",
@@ -212,10 +211,9 @@ lines = [
     f"  learning rate               {info['learning_rate']}",
     f"  optimization                {info['optimization']}",
     f"  epochs run / max            {info['epochs_run']} / {info['max_epochs']}",
-    f"  best epoch                  {info['best_epoch']}",
-    f"  best validation loss        {info['best_validation_loss']:.4g}",
-    f"  best validation RMSE        {info['best_validation_position_rmse_m']:.3f} m",
-    f"  L2 weight / patience        {info['l2_weight']} / {info['early_stopping_patience']}",
+    f"  final train loss            {info['final_train_loss']:.4g}",
+    f"  final train RMSE            {info['final_train_position_rmse_m']:.3f} m",
+    f"  L2 weight                   {info['l2_weight']}",
     f"  training time               {info['training_time_s'] / 3600:.2f} h",
     'TEST by LEO orbit (A26)   LEO range RMS  3D RMSE network / EKF  LEO fault epochs network / EKF',
     *[f"  {orbit:<24s}{test[orbit]['leo_range_error']['rms_m']:10.1f} m"
@@ -234,9 +232,6 @@ epochs = [h['epoch'] for h in history]
 fig, axes = plt.subplots(1, 3, figsize=(20, 8), gridspec_kw={'width_ratios': [1, 1, 0.9]})
 for ax, key, label in ((axes[0], 'loss', 'Loss, Eq. (32)'), (axes[1], 'position_rmse_m', 'Position RMSE [m]')):
     ax.plot(epochs, [h[f'train_{key}'] for h in history], color=TRAIN_COLOR, linewidth=2, label='train')
-    ax.plot(epochs, [h[f'validation_{key}'] for h in history], color=VALIDATION_COLOR, linewidth=2,
-            linestyle='--', label='validation')
-    ax.axvline(info['best_epoch'], color='#52514e', linewidth=1, linestyle=':', label=f"best epoch {info['best_epoch']}")
     ax.set(xlabel='Epoch', ylabel=label, title=label)
     finish(ax)
 axes[0].set_yscale('log')

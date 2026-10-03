@@ -47,8 +47,9 @@ def get_folders() -> tuple[Path, Path]:
 
 
 DATASET_FOLDER, OUTPUT_ROOT = get_folders()
-# Training setup of this branch: main, or exp/<EXPERIMENT> (the training experiment branches); its outputs and its
-# data cache go to OUTPUT_ROOT/EXPERIMENT, so the runs of the branches do not overwrite each other.
+# Training setup of this branch: main (training exactly as the paper), or exp/<EXPERIMENT> (the training experiment
+# branches); its outputs and its data cache go to OUTPUT_ROOT/EXPERIMENT, so the runs of the branches do not
+# overwrite each other.
 EXPERIMENT = 'main'
 OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
@@ -119,13 +120,12 @@ FC_HIDDEN_UNITS = 64               # hidden layer of the masked FC in Fig. 8    
 MASK_EPSILON = 1e-6                # epsilon of Eq. (22)                          [paper Eq. (22)]
 
 # --- Training (paper Sec. II-C, Table III, Fig. 15) --------------------------
-LEARNING_RATE = 1e-4              # Adam                                         [paper Table III, Sec. III-B]
-TRAINING_EPOCHS = 300            # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
+# Exactly as in the paper: the whole training dataset trains the network, no validation, early stopping,
+# gradient clipping or gain scale; the model after the last epoch is tested.
+LEARNING_RATE = 0.01               # Adam                                         [paper Table III, Sec. III-B]
+TRAINING_EPOCHS = 480              # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
 L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                            [choice A14]
-BACKPROP_WINDOW = 10               # fusion epochs per truncated back-propagation [choice A15]
-VALIDATION_FRACTION = 0.2          # last 20 % of the training dataset            [choice A21]
-EARLY_STOPPING_PATIENCE = 75       # epochs without a better validation loss      [choice A21]
-GRADIENT_CLIP_NORM = 1.0           # max gradient norm before each Adam step      [choice A22]
+BACKPROP_WINDOW = 1                # single-step gradient of Eq. (31): state and LSTM state detached every epoch [paper Eq. (31)]
 
 # --- Fault detection and integrity (paper Sec. II-D, Fig. 20) ----------------
 FALSE_ALARM_PROBABILITY = 1e-3     # alpha of the chi-square test                 [ref 33]

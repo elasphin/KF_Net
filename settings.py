@@ -36,7 +36,9 @@ LOCAL_OUTPUT_FOLDER = PROJECT_FOLDER / 'outputs'
 
 def get_folders() -> tuple[Path, Path]:
     """(dataset folder, output folder) of the current environment."""
-    if Path('/kaggle').is_dir():                  # Kaggle (checked first: Kaggle also has google.colab installed)
+    # By the environment variables, not the folders: Kaggle also has google.colab installed and Colab can have a
+    # /kaggle folder.
+    if 'KAGGLE_KERNEL_RUN_TYPE' in os.environ:    # Kaggle
         return (KAGGLE_FOLDER if KAGGLE_FOLDER.is_dir() else Path('/kaggle/input')), KAGGLE_OUTPUT_FOLDER
     if 'COLAB_RELEASE_TAG' in os.environ:          # Colab
         if not COLAB_FOLDER.parent.is_dir():       # Drive not mounted yet

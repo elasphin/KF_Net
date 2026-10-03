@@ -16,10 +16,12 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 ## Training experiments (branches `exp/...`)
 
 Each branch is one training setup (`settings.EXPERIMENT`); its outputs go to their own folder (see Run).
-`main` trains exactly as the paper says and nothing more (the setup of `exp/paper`, merged into `main`): the whole
-Data01 trains the network (no validation, no early stopping), single-step gradient of Eq. (31) (filter and LSTM state
-detached every epoch), alternating optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs
-(Fig. 15), no gradient clipping and no gain scale; the model after the last epoch is tested. Every `exp/...` branch is
+`main` trains as the paper says (the setup of `exp/paper`, merged into `main`): the whole Data01 trains the network
+(no early stopping), single-step gradient of Eq. (31) (filter and LSTM state detached every epoch), alternating
+optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
+gain scale. Added on every branch (docs/ASSUMPTIONS.md A21; the paper has no validation): after every epoch the
+network runs on a third SmartPNT-POS dataset, `Data11_20221230_ISA-100C_CAR_Complex` (validation only, it never
+trains the network), and the model with the lowest validation loss is the one tested. Every `exp/...` branch is
 this training with one change: `exp/alternating` (joint instead of alternating optimization), `exp/grad-clip`,
 `exp/gain-scale`, `exp/lr-sweep` (the learning rates of Fig. 15), `exp/input-norm` (L2 or z-score),
 `exp/bptt-kalmannet` (BPTT of KalmanNet [14]) and `exp/tbptt-sensorfusion` (truncated BPTT of
@@ -34,17 +36,18 @@ FC, the second only the masked CNN).
 `run_experiments.ipynb` (the same on every branch) runs `main` or one `exp/...` branch: in Colab, File → Open notebook →
 GitHub → `elasphin/KF_Net`, any branch → `run_experiments.ipynb` (on Kaggle: upload it, attach the dataset,
 Internet on). Choose `BRANCH` and `MODE` in its first cell and run all cells: it clones the branch, sets the data and
-epochs of the mode (`quick`: 1500 / 600 fusion epochs and 3 epochs, to check that a branch runs; `screening`:
-3000 / 1000 and 100 epochs, the same for all branches, to compare them; `full`: all data and 480 epochs, as the
-paper), runs `train.py`, `test.py` and `show_results.py` (`lr_sweep.py` for `exp/lr-sweep`) and compares every
-experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<experiment>`.
+epochs of the mode (`quick`: 1500 / 600 / 600 fusion epochs of training / validation / test and 3 epochs, to check
+that a branch runs; `screening`: 3000 / 1000 / 1000 and 100 epochs, the same for all branches, to compare them; `full`: all data and 480 epochs, as the
+paper), runs `train.py`, `test.py` and `show_results.py` (for `exp/lr-sweep` with the learning rate `LEARNING_RATE` of its
+first cell, one rate per run) and compares every experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<experiment>`.
 
 - **Resume** (`train.py`): after every epoch `train.py` keeps the whole training state in
   `training_state.pt`. If a session ends, running it again (all cells of the notebook) continues after the last
   saved epoch, with the same result as an uninterrupted run. A change of settings, training code or data starts a
   new training; raising `TRAINING_EPOCHS` continues a finished one; `python train.py --restart` always starts anew.
 - **Comparison** (`show_results.py compare`): reads every experiment folder of `OUTPUT_ROOT` and writes
-  `comparison.txt` (training samples and epochs, with a warning if they differ; final training RMSE; test 3-D RMSE
+  `comparison.txt` (training and validation samples and epochs, with a warning if they differ; final training RMSE;
+  epoch and validation RMSE of the tested model; test 3-D RMSE
   of the network and the EKF and the improvement, per LEO orbit) and `comparison.png` (test 3-D RMSE of each
   experiment, one panel per LEO orbit, EKF as reference). The experiments must have run with the same mode.
 
@@ -58,17 +61,18 @@ experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<ex
 | `leo_pseudorange.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5) (Student-t MP/NLOS noise with the variance of Eq. (4), A3), and the orbit error variance of the filter |
 | `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_pseudorange.py`) |
 | `navigation.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update; network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29); the filter of Fig. 2 (network or traditional EKF gain), shared by training and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
-| `train.py` | Offline training on the whole training dataset, Eq. (30)-(32); resume of an interrupted training: the training state after every epoch |
+| `train.py` | Offline training on the whole training dataset, Eq. (30)-(32); validation after every epoch and the model of the best validation loss (A21); resume of an interrupted training: the training state after every epoch |
 | `run_experiments.ipynb` | Colab / Kaggle notebook that runs one experiment branch in one mode and compares |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
 | `check_dataset.py` | Checks of the real dataset reading against the truth (IMR header, truth columns, lever arm, 1-s INS with IMU time offsets, free INS, pseudorange residuals) and the free-INS / EKF GNSS / EKF GNSS+LEO / network baselines on the whole dataset |
-| `show_results.py` | Figures and table as in the paper: training loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size; `python show_results.py compare`: table and figure comparing the test results of every experiment branch run |
+| `show_results.py` | Figures and table as in the paper: training and validation loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size; `python show_results.py compare`: table and figure comparing the test results of every experiment branch run |
 
 ## Data
 
 The paper uses the SmartPNT-POS dataset: <https://www.kaggle.com/datasets/fengzhusgg/smartpnt-pos>
 (training: `Data01_20230102_ISA-100C_Vehicle_Complex`, testing: `Data02_20220309_ISA-100C_Vehicle_Complex`;
-change the names in `settings.py` if the folders are named differently on Kaggle).
+validation, not in the paper: `Data11_20221230_ISA-100C_CAR_Complex`, A21; change the names in `settings.py` if the
+folders are named differently on Kaggle).
 
 The data folder is set at the top of `settings.py` (`python settings.py` shows it):
 
@@ -84,8 +88,9 @@ The data folder is set at the top of `settings.py` (`python settings.py` shows i
    Dataset/
    ├── Data01_20230102_ISA-100C_Vehicle_Complex/
    ├── Data02_20220309_ISA-100C_Vehicle_Complex/
-   ├── LEO_TLE/           # TLE files (*.txt) of the LEO satellites around both days
-   └── products/          # *.sp3, *.clk, brdm* of both days, if not inside the data folders
+   ├── Data11_20221230_ISA-100C_CAR_Complex/      # validation (A21)
+   ├── LEO_TLE/           # TLE files (*.txt) of the LEO satellites around the three days
+   └── products/          # *.sp3, *.clk, brdm* of the three days, if not inside the data folders
    ```
 
 If the folders are not found there, only the needed files are downloaded with `kagglehub`. Put your Kaggle
@@ -110,10 +115,12 @@ In Colab, first get the code: `!git clone https://github.com/elasphin/KF_Net.git
 
 ```bash
 pip install -r requirements.txt
-python train.py         # outputs/masked_cla_network.pt (model after the last epoch), training_history.json, training_info.json,
-                        #         leo_orbit_error_train.json (orbit error of the training LEO orbit, used in R)
+python train.py         # outputs/masked_cla_network.pt (model of the best validation loss, tested),
+                        #         masked_cla_network_last.pt (model after the last epoch), training_history.json,
+                        #         training_info.json, leo_orbit_error_train.json (orbit error of the training LEO
+                        #         orbit, used in R), leo_orbit_error_validation.json
 python test.py          # outputs/test_summary.json, test_epochs.csv, leo_orbit_error_test.json (one entry per LEO orbit)
-python check_dataset.py # optional: dataset reading checks and baselines (python check_dataset.py test for Data02)
+python check_dataset.py # optional: dataset reading checks and baselines (argument validation or test for Data11 / Data02)
 python show_results.py  # outputs/results_training.png, results_orbits.png, results_table.txt and, per LEO orbit,
                         #         results_errors_<orbit>.png, results_cdf_<orbit>.png, results_stanford_<orbit>.png
 ```
@@ -127,9 +134,10 @@ The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`, the folder
 `My Drive/KF_Net_outputs` in Colab (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next
 to the code on my computer.
 
-By default both datasets are used whole (`MAX_FUSION_EPOCHS = {'train': None, 'test': None}`, as in the paper). Note
+By default the datasets are used whole (`MAX_FUSION_EPOCHS = {'train': None, 'validation': None, 'test': None}`, as in
+the paper). Note
 that both start with a static period (Data01: about 13 min, Data02: about 2 min before the vehicle moves).
-For a quick run set `MAX_FUSION_EPOCHS` (one limit per dataset, e.g. `{'train': 1500, 'test': 600}`) and
+For a quick run set `MAX_FUSION_EPOCHS` (one limit per dataset, e.g. `{'train': 1500, 'validation': 600, 'test': 600}`) and
 `TRAINING_EPOCHS` in `settings.py`. Everything is then done on the first `MAX_FUSION_EPOCHS[split]` fusion epochs
 of each dataset only: the RINEX observations and the two truth files are read only
 over them, the SP3 and CLK products over them +- 3 h (`dataset.PRODUCT_MARGIN`, enough for the 10-point SP3

@@ -43,7 +43,6 @@ class MaskedCLANetwork(nn.Module):
         self.fc_output = nn.Linear(cfg.FC_HIDDEN_UNITS, STATE_SIZE * max_measurements)
         nn.init.zeros_(self.fc_output.weight)            # K = 0 before training (A12)
         nn.init.zeros_(self.fc_output.bias)
-        self.register_buffer('gain_row_scale', torch.ones(STATE_SIZE))                  # A11
 
     def forward(self, features, valid_length, measurement_count, hidden=None):
         """features: padded X_k [D]; returns the Kalman gain [15, N_max] and the LSTM state (h, c)."""
@@ -74,4 +73,4 @@ class MaskedCLANetwork(nn.Module):
         # Masked FC: Kalman gain, columns j >= N_k are zero.
         gain = self.fc_output(F.relu(self.fc_hidden(context))).view(STATE_SIZE, self.max_measurements)
         column_mask = (torch.arange(self.max_measurements) < measurement_count).to(gain.dtype)
-        return gain * column_mask * self.gain_row_scale.view(STATE_SIZE, 1), hidden
+        return gain * column_mask, hidden

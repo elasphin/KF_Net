@@ -13,7 +13,7 @@ each result. Sections:
   5. free INS from the truth over 10 / 30 / 60 / 100 s
   6. GPS / BDS-3 / LEO pseudorange residuals at the truth antenna (receiver clock of each system removed),
      also the mean residual of each GPS / BDS-3 satellite
-  7. filter baselines on the training and validation parts of train.py: free INS, EKF with GNSS only,
+  7. filter baselines on the whole dataset: free INS, EKF with GNSS only,
      EKF with GNSS + LEO and, if outputs/masked_cla_network.pt exists, the network
 """
 import dataclasses
@@ -24,7 +24,7 @@ import numpy as np
 import torch
 
 import settings as cfg
-from data_io.data_cache import load_dataset, training_split
+from data_io.data_cache import load_dataset
 from data_io.read_dataset import IMR_HEADER_SIZE, find_dataset_folder, read_imu, read_rover_info
 from measurements.earth_models import (EARTH_ROTATION_VECTOR, ecef_to_llh, ecef_to_ned_matrix, gravity,
                                        rotation_matrix_to_vector, skew)
@@ -193,9 +193,8 @@ def residuals(data, measurements):
 
 
 def baselines(data, measurements):
-    print('\n7. Filter baselines on the training / validation parts of train.py, 3-D antenna RMSE [m]')
+    print('\n7. Filter baselines on the whole dataset, 3-D antenna RMSE [m]')
     last = len(data.fusion_times) - 1
-    split = training_split(len(data.fusion_times))
     only_gnss = [m.subset(np.flatnonzero(m.systems != 'L')) for m in measurements]
     nothing = [m.subset(np.array([], dtype=int)) for m in measurements]
     network = None
@@ -205,13 +204,12 @@ def baselines(data, measurements):
         checkpoint = torch.load(checkpoint_file)
         network = MaskedCLANetwork(checkpoint['max_measurements'])
         network.load_state_dict(checkpoint['state_dict'])
-    for label, first, end in (('training', 0, split), ('validation', split, last), ('all', 0, last)):
-        line = f'   {label:10s} epochs {first}..{end}:'
-        for name, meas in (('free INS', nothing), ('EKF GNSS', only_gnss), ('EKF GNSS+LEO', measurements)):
-            line += f'  {name} {run_filter(data, meas, None, first, end, fault_detection=False)["position_rmse_m"]:.2f}'
-        if network is not None:
-            line += f'  network {run_filter(data, measurements, network, first, end, False)["position_rmse_m"]:.2f}'
-        print(line)
+    line = f'   epochs 0..{last}:'
+    for name, meas in (('free INS', nothing), ('EKF GNSS', only_gnss), ('EKF GNSS+LEO', measurements)):
+        line += f'  {name} {run_filter(data, meas, None, 0, last, fault_detection=False)["position_rmse_m"]:.2f}'
+    if network is not None:
+        line += f'  network {run_filter(data, measurements, network, 0, last, False)["position_rmse_m"]:.2f}'
+    print(line)
 
 
 def main():

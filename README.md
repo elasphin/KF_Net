@@ -13,6 +13,14 @@ What follows the paper exactly, what was removed, and every assumption the paper
 alternatives to choose from) are listed in [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md). Each value in `settings.py` is
 tagged `[paper]`, `[ref N]` or `[choice AX]`.
 
+## Training experiments (branches `exp/...`)
+
+Each branch is one training setup (`settings.EXPERIMENT`); its outputs go to their own folder (see Run).
+`exp/paper` trains exactly as the paper says and nothing more: the whole Data01 trains the network (no validation,
+no early stopping), single-step gradient of Eq. (31) (filter and LSTM state detached every epoch), alternating
+optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
+gain scale; the model after the last epoch is tested. Every other `exp/...` branch is `exp/paper` with one change.
+
 ## Files
 
 | File | Content |
@@ -26,11 +34,11 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 | `measurements/egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_pseudorange.py`) |
 | `navigation/ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
 | `navigation/masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
-| `navigation/navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training, validation and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
-| `train.py` | Offline training with validation, Eq. (30)-(32) |
+| `navigation/navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
+| `train.py` | Offline training on the whole training dataset, Eq. (30)-(32) |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
-| `check_dataset.py` | Checks of the real dataset reading against the truth (IMR header, truth columns, lever arm, 1-s INS with IMU time offsets, free INS, pseudorange residuals) and the free-INS / EKF GNSS / EKF GNSS+LEO / network baselines on the training and validation parts |
-| `show_results.py` | Figures and table as in the paper: train/validation loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size |
+| `check_dataset.py` | Checks of the real dataset reading against the truth (IMR header, truth columns, lever arm, 1-s INS with IMU time offsets, free INS, pseudorange residuals) and the free-INS / EKF GNSS / EKF GNSS+LEO / network baselines on the whole dataset |
+| `show_results.py` | Figures and table as in the paper: training loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size |
 
 ## Data
 
@@ -69,7 +77,7 @@ In Colab, first get the code: `!git clone https://github.com/elasphin/KF_Net.git
 
 ```bash
 pip install -r requirements.txt
-python train.py         # outputs/masked_cla_network.pt (best validation model), training_history.json, training_info.json,
+python train.py         # outputs/masked_cla_network.pt (model after the last epoch), training_history.json, training_info.json,
                         #         leo_orbit_error_train.json (orbit error of the training LEO orbit, used in R)
 python test.py          # outputs/test_summary.json, test_epochs.csv, leo_orbit_error_test.json (one entry per LEO orbit)
 python check_dataset.py # optional: dataset reading checks and baselines (python check_dataset.py test for Data02)
@@ -82,8 +90,9 @@ true orbit) and `test.py` runs it and the traditional EKF with every orbit of `L
 measurements and the same R: `'reference'` (upper bound), `'tle'` (SGP4 of the TLE available before the dataset) and,
 once `leo_pseudorange.network_orbit` is written, `'network'` (neural-network orbit prediction).
 
-The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`: `My Drive/KF_Net_outputs` in Colab
-(kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next to the code on my computer.
+The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`, the folder `EXPERIMENT` (e.g. `paper`) inside
+`My Drive/KF_Net_outputs` in Colab (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next
+to the code on my computer.
 
 By default both datasets are used whole (`MAX_FUSION_EPOCHS = {'train': None, 'test': None}`, as in the paper). Note
 that both start with a static period (Data01: about 13 min, Data02: about 2 min before the vehicle moves).
@@ -92,8 +101,7 @@ For a quick run set `MAX_FUSION_EPOCHS` (one limit per dataset, e.g. `{'train': 
 of each dataset only: the RINEX observations and the two truth files are read only
 over them, the SP3 and CLK products over them +- 3 h (`read_dataset.PRODUCT_MARGIN`, enough for the 10-point SP3
 interpolation, so the GNSS satellite positions and clocks are the same as with the whole files), the LEO orbits are
-made at these epochs, and the LEO C/N0 per elevation (`mean_cn0_bins`), the LEO orbit error of R and the
-training/validation split come from them (on the training dataset the statistics come from its training part only). The LEO reference orbit is still integrated from the epoch of its
+made at these epochs, and the LEO C/N0 per elevation (`mean_cn0_bins`) and the LEO orbit error of R come from them. The LEO reference orbit is still integrated from the epoch of its
 reference TLE (docs/ASSUMPTIONS.md A1), so the time from that epoch to the fusion epochs is not shortened. The time of
 each stage (reading, GNSS, LEO) and of the training is printed.
 
@@ -112,7 +120,7 @@ The Numba versions compile on the first run (a few seconds) and keep the compile
 To compare the two `LEO_FORCE_MODEL` versions, note that with `DATA_CACHE = True` the orbits are computed only
 when the cache is made (changing `LEO_FORCE_MODEL` makes a new cache file).
 
-In training and validation (network gain, no fault detection) the filter covariance P is not needed, so it is
+In training (network gain, no fault detection) the filter covariance P is not needed, so it is
 not propagated there; those runs return NaN protection levels. The traditional EKF and `test.py` compute P as
 before.
 

@@ -1,5 +1,7 @@
 """Online test on the testing dataset (paper Sec. III-C): Masked CLA KalmanNet vs traditional EKF.
 
+The network tested is the model of the best validation loss (train.py, A21).
+
     python test.py   ->  outputs/test_summary.json, outputs/test_epochs.csv   (plots: show_results.py)
 
 The network trained once (LEO_TRAIN_ORBIT) is tested with every LEO filter orbit of
@@ -43,6 +45,7 @@ def main():
                          f'settings.LEO_TRAIN_ORBIT is {cfg.LEO_TRAIN_ORBIT!r}; run train.py again')
     network = MaskedCLANetwork(checkpoint['max_measurements'])
     network.load_state_dict(checkpoint['state_dict'])
+    print(f"model of epoch {checkpoint.get('epoch')} (best validation loss, A21): {CHECKPOINT_FILE}")
 
     data, orbits = load_dataset('test')
     range_errors = json.loads((cfg.OUTPUT_FOLDER / 'leo_orbit_error_test.json').read_text())

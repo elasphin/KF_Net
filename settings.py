@@ -59,7 +59,11 @@ KAGGLE_DATASET = 'elasphin/mknet-project'                      # [paper Sec. III
 PRODUCTS_FOLDER = DATASET_FOLDER / 'products'   # SP3, CLK, brdm if not in the data folder; then DATASET_FOLDER itself
 TRAIN_FOLDER_NAME = 'Data01_20230102_ISA-100C_Vehicle_Complex'  # training set (~150 min, Table I)
 TEST_FOLDER_NAME = 'Data02_20220309_ISA-100C_Vehicle_Complex'   # testing set (~110 min, Table I)
-MAX_FUSION_EPOCHS = {'train': None, 'test': None}   # first fusion epochs of each dataset; None = all (paper)
+# Validation set: a third SmartPNT-POS dataset (same IMU ISA-100C, car, complex environment); the paper has no
+# validation. It only selects the model that is tested (best validation loss); it never trains it.  [choice A21]
+VALIDATION_FOLDER_NAME = 'Data11_20221230_ISA-100C_CAR_Complex'
+# First fusion epochs of each dataset; None = all (paper)
+MAX_FUSION_EPOCHS = {'train': None, 'validation': None, 'test': None}
 RANDOM_SEED = 0
 
 # --- IMU error model (paper Table II) ----------------------------------------
@@ -102,7 +106,7 @@ LEO_ELEVATION_MASK_DEG = 10.0      # deg                                        
 LEO_ELEVATION_BIN_DEG = 10.0       # deg, bins for the mean C/N0                   [choice A3]
 LEO_NOISE_DOF = 5.0                # Student-t degrees of freedom of the LEO MP/NLOS noise (> 2; large = Gaussian) [choice A3]
 LEO_CODE_CHIP_RATE = 1.023e6       # chip/s, used by the receiver-noise term      [choice A3]
-LEO_NOISE_SEED = {'train': 1, 'test': 2}
+LEO_NOISE_SEED = {'train': 1, 'validation': 3, 'test': 2}
 # LEO orbit used by the filter (A26): 'reference' = true orbit (the one the measurements are made with),
 # 'tle' = SGP4 of the predictor TLE, 'network' = leo_pseudorange.network_orbit (orbit predicted by a neural
 # network, to be written). The network is trained once with LEO_TRAIN_ORBIT and tested with every orbit of
@@ -121,8 +125,9 @@ FC_HIDDEN_UNITS = 64               # hidden layer of the masked FC in Fig. 8    
 MASK_EPSILON = 1e-6                # epsilon of Eq. (22)                          [paper Eq. (22)]
 
 # --- Training (paper Sec. II-C, Table III, Fig. 15) --------------------------
-# Exactly as in the paper: the whole training dataset trains the network, no validation, early stopping,
-# gradient clipping or gain scale; the model after the last epoch is tested.
+# As in the paper: the whole training dataset trains the network for TRAINING_EPOCHS epochs, no early stopping,
+# gradient clipping or gain scale. Added (A21): after every epoch the network runs on the validation dataset and
+# the model with the lowest validation loss is the one tested (the model after the last epoch is kept as well).
 LEARNING_RATE = 0.01               # Adam                                         [paper Table III, Sec. III-B]
 TRAINING_EPOCHS = 480              # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
 L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                            [choice A14]

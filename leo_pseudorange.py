@@ -481,9 +481,9 @@ def orbit_error_variance(range_errors, split):
     """sigma^2 of the orbit error in the filter R (A25), the same for every filter orbit (A26).
 
     range_errors: {filter orbit name: range errors} of the whole dataset. Writes leo_orbit_error_<split>.json
-    (train: RMS, mean and samples of LEO_TRAIN_ORBIT; test: the same for each test orbit) and returns the mean
-    square range error of LEO_TRAIN_ORBIT on the training dataset (written by train.py; zero for the reference
-    orbit).
+    (train: RMS, mean and samples of LEO_TRAIN_ORBIT; validation, test: the same for each orbit of the split) and
+    returns the mean square range error of LEO_TRAIN_ORBIT on the training dataset (written by train.py; zero for
+    the reference orbit).
     """
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
     train_file = cfg.OUTPUT_FOLDER / 'leo_orbit_error_train.json'

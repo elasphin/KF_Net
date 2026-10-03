@@ -32,10 +32,11 @@ Resume an interrupted training (train.py), e.g. after the end of a Colab or Kagg
 
 After every epoch train.py keeps the whole training state in OUTPUT_FOLDER/training_state.pt: network,
 optimizers, random generators, history, info and a fingerprint of everything the training depends on
-(settings, training code, data cache keys of the training and validation datasets). Running train.py again continues after the last saved epoch
-if the fingerprint is the same, so the result equals that of an uninterrupted run; otherwise (settings,
-code or data changed) a new training starts. TRAINING_EPOCHS is not in the fingerprint: raising it
-continues a finished training. python train.py --restart always starts a new training.
+(settings, training code, data cache keys of the training and validation datasets). Running train.py
+again continues after the last saved epoch if the fingerprint is the same, so the result equals that of
+an uninterrupted run; otherwise (settings, code or data changed) a new training starts. TRAINING_EPOCHS is
+not in the fingerprint: raising it continues a finished training. python train.py --restart always starts a
+new training.
 """
 import functools
 import hashlib

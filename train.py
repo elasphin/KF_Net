@@ -2,6 +2,11 @@
 
     python train.py  ->  outputs/masked_cla_network.pt (best validation model),
                          outputs/training_history.json, outputs/training_info.json
+    python train.py --restart   (a new training even if a saved one exists)
+
+An interrupted training continues after its last epoch when train.py runs again with the same
+settings, code and data (training_state.py, outputs/training_state.pt); one ended by early
+stopping is done.
 
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
@@ -25,6 +30,7 @@ from data_io.data_cache import load_dataset, training_split
 from navigation.ins_filter import STATE_SIZE
 from navigation.masked_cla_network import FIXED_FEATURE_SIZE, MaskedCLANetwork
 from navigation.navigation_filter import run_filter
+import training_state
 
 CHECKPOINT_FILE = cfg.OUTPUT_FOLDER / 'masked_cla_network.pt'
 
@@ -44,6 +50,8 @@ def training_step(network, optimizer, parameters, data, measurements, last):
 def main():
     torch.manual_seed(cfg.RANDOM_SEED)
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+    if training_state.finished():
+        return
     start_time = time.time()
     data, orbits = load_dataset('train')
     measurements = orbits[cfg.LEO_TRAIN_ORBIT]
@@ -61,7 +69,7 @@ def main():
     filter_optimizer = torch.optim.Adam(filter_part, lr=cfg.LEARNING_RATE)
 
     info = {
-        'dataset': data.name, 'leo_train_orbit': cfg.LEO_TRAIN_ORBIT,
+        'experiment': cfg.EXPERIMENT, 'dataset': data.name, 'leo_train_orbit': cfg.LEO_TRAIN_ORBIT,
         'training_samples': split, 'validation_samples': last - split,
         'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS,
         'early_stopping_patience': cfg.EARLY_STOPPING_PATIENCE, 'l2_weight': cfg.L2_WEIGHT,
@@ -75,8 +83,12 @@ def main():
     }
     print(json.dumps(info, indent=1))
 
-    history, best_loss, epochs_without_improvement = [], np.inf, 0
-    for epoch in range(1, cfg.TRAINING_EPOCHS + 1):
+    optimizers = (filter_optimizer, encoder_optimizer)
+    first_epoch, history, info, time_before = training_state.resume(network, optimizers, info)
+    losses = [h['validation_loss'] for h in history]                 # early stopping state of a resumed training
+    best_loss = min(losses, default=np.inf)
+    epochs_without_improvement = len(losses) - 1 - losses.index(best_loss) if losses else 0
+    for epoch in range(first_epoch, cfg.TRAINING_EPOCHS + 1):
         training_step(network, filter_optimizer, filter_part, data, measurements, split)   # theta, psi frozen
         train = training_step(network, encoder_optimizer, encoder, data, measurements, split)  # psi, theta frozen
         validation = run_filter(data, measurements, network, split, last, fault_detection=False)
@@ -95,10 +107,14 @@ def main():
                         'leo_train_orbit': cfg.LEO_TRAIN_ORBIT}, CHECKPOINT_FILE)
         else:
             epochs_without_improvement += 1
-        info.update(epochs_run=epoch, training_time_s=time.time() - start_time)
+        stopped = epochs_without_improvement >= cfg.EARLY_STOPPING_PATIENCE
+        info.update(epochs_run=epoch, final_train_loss=train['loss'],
+                    final_train_position_rmse_m=train['position_rmse_m'],
+                    training_time_s=time_before + time.time() - start_time)
         (cfg.OUTPUT_FOLDER / 'training_history.json').write_text(json.dumps(history, indent=1))
         (cfg.OUTPUT_FOLDER / 'training_info.json').write_text(json.dumps(info, indent=1))
-        if epochs_without_improvement >= cfg.EARLY_STOPPING_PATIENCE:
+        training_state.save(epoch, network, optimizers, history, info, stopped=stopped)
+        if stopped:
             print(f'early stopping: no better validation loss for {cfg.EARLY_STOPPING_PATIENCE} epochs')
             break
 

@@ -46,7 +46,11 @@ def get_folders() -> tuple[Path, Path]:
     return LOCAL_FOLDER, LOCAL_OUTPUT_FOLDER
 
 
-DATASET_FOLDER, OUTPUT_FOLDER = get_folders()
+DATASET_FOLDER, OUTPUT_ROOT = get_folders()
+# Training setup of this branch: main, or exp/<EXPERIMENT> (the training experiment branches); its outputs and its
+# data cache go to OUTPUT_ROOT/EXPERIMENT, so the runs of the branches do not overwrite each other.
+EXPERIMENT = 'main'
+OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
 KAGGLE_DATASET = 'elasphin/mknet-project'                      # [paper Sec. III]

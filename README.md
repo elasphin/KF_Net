@@ -21,6 +21,9 @@ no early stopping), single-step gradient of Eq. (31) (filter and LSTM state deta
 optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
 gain scale; the model after the last epoch is tested. Every other `exp/...` branch is `exp/paper` with one change.
 
+This branch, `exp/gain-scale`: the network gain is scaled per row, K = diag(g) K_net, with g_i the RMS of row i of
+the traditional EKF gain on the training dataset (docs/ASSUMPTIONS.md A11).
+
 ## Files
 
 | File | Content |

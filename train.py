@@ -3,7 +3,8 @@
     python train.py  ->  outputs/masked_cla_network.pt (model after the last epoch),
                          outputs/training_history.json, outputs/training_info.json
 
-Training exactly as in the paper (branch exp/paper), nothing added:
+Training of exp/paper with one change (branch exp/gain-scale): the network gain is scaled per row,
+K = diag(g) K_net, g_i = RMS of row i of the traditional EKF gain on the training dataset (A11).
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
 averaged over the epochs and the three components (MSE, Table III) plus
@@ -14,13 +15,14 @@ Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
 epoch the filter part theta (LSTM, attention, FC) is updated with the encoder
 psi (masked CNN) frozen, then psi is updated with theta frozen; one Adam step
 each (A15). The whole training dataset trains the network (paper Sec. III); there
-is no validation, early stopping, gradient clipping or gain scale, and the model
+is no validation, early stopping or gradient clipping, and the model
 after the last epoch is tested. The filter uses the LEO orbit settings.LEO_TRAIN_ORBIT
 (A26; the true orbit by default).
 """
 import json
 import time
 
+import numpy as np
 import torch
 
 import settings as cfg
@@ -51,8 +53,10 @@ def main():
     measurements = orbits[cfg.LEO_TRAIN_ORBIT]
     max_measurements = max(len(m) for m in measurements)             # N_max of Eq. (16)
 
-    classical = run_filter(data, measurements, fault_detection=False)  # traditional EKF, for comparison only
+    # Output scale of the gain rows from a traditional EKF on the training dataset (A11).
+    classical = run_filter(data, measurements, fault_detection=False)
     network = MaskedCLANetwork(max_measurements)
+    network.gain_row_scale.copy_(torch.tensor(np.maximum(classical['gain_row_rms'], 1e-12)))
     encoder = [network.conv.weight, network.conv_bias]                  # psi of Ref. [15]: masked CNN
     filter_part = [p for p in network.parameters() if not any(p is q for q in encoder)]   # theta: LSTM, attention, FC
     encoder_optimizer = torch.optim.Adam(encoder, lr=cfg.LEARNING_RATE)
@@ -69,6 +73,7 @@ def main():
                    f'FC {cfg.FC_HIDDEN_UNITS} -> gain {STATE_SIZE}x{max_measurements}',
         'trainable_parameters': sum(p.numel() for p in network.parameters()),
         'classical_ekf_training_position_rmse_m': classical['position_rmse_m'],
+        'gain_row_scale': network.gain_row_scale.tolist(),
     }
     print(json.dumps(info, indent=1))
 

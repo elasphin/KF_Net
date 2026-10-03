@@ -1,5 +1,4 @@
-Dataset/*
-!Dataset/README.md
+Dataset/
 outputs/
 __pycache__/
 *.pyc

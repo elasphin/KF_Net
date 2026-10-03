@@ -133,7 +133,7 @@ VERTICAL_PL_FACTOR = 5.33          # K_V                                        
 ALERT_LIMIT = 30.0                 # m, Stanford diagrams                         [paper Fig. 20]
 
 # --- Run time only (the results do not change; README.md "Run time") --------
-INS_MECHANIZATION = 'numba'        # 'python' (ins_filter.mechanize loop) or 'numba' (same arithmetic, compiled)
+INS_MECHANIZATION = 'numba'        # 'python' (navigation.mechanize loop) or 'numba' (same arithmetic, compiled)
 LEO_FORCE_MODEL = 'numba'          # 'python' (leo_pseudorange.equations_of_motion) or 'numba' (same, compiled)
 DATA_CACHE = True                  # keep the read dataset and the simulated measurements in OUTPUT_FOLDER/cache
 

@@ -111,7 +111,7 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
     (a correction at k shifts the prior at k+1 by Phi dx_k), the innovation shifts by -H link, so
     dx_k = K_k (nu_k - H_k link_k) gives the sensitivity (I - K H) Phi S + (dK/dtheta) nu, and the network
     inputs of the next epoch (innovation, residual after the update, state residual and state innovation)
-    carry the same shift. The gradient is truncated every BACKPROP_WINDOW epochs.
+    carry the same shift. The gradient is truncated every BACKPROP_WINDOW epochs (None: only at 'last').
     The loss counts every epoch, also those without a usable measurement (no correction).
     The covariance P is used only by the EKF gain, the fault detection and the protection
     levels; a network run without fault detection (training, validation) leaves it out and
@@ -188,7 +188,7 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
                             'state_innovation': torch.from_numpy(dx) + dx_tensor - dx_tensor.detach()}  # Eq. (12)
         state = new_state
 
-        if training and (k % cfg.BACKPROP_WINDOW == 0 or k == last):
+        if training and ((cfg.BACKPROP_WINDOW is not None and k % cfg.BACKPROP_WINDOW == 0) or k == last):
             if torch.is_tensor(window_loss) and window_loss.requires_grad:
                 window_loss.backward()
             window_loss, link = 0.0, no_shift

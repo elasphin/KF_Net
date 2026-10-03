@@ -49,7 +49,10 @@ def get_folders() -> tuple[Path, Path]:
 DATASET_FOLDER, OUTPUT_ROOT = get_folders()
 # Training setup of this branch (exp/<EXPERIMENT>): its outputs and its data cache go to OUTPUT_ROOT/EXPERIMENT,
 # so the runs of the experiment branches do not overwrite each other.
-EXPERIMENT = 'paper'
+# exp/paper with the back-propagation through time of KalmanNet [14] (V2, then a long fine-tuning), with or without
+# the gain row scale (A11): without it the first Adam step of the attitude and bias rows makes the filter diverge.
+GAIN_SCALE = True
+EXPERIMENT = 'bptt-kalmannet' + ('-gain-scale' if GAIN_SCALE else '')
 OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
@@ -124,7 +127,10 @@ MASK_EPSILON = 1e-6                # epsilon of Eq. (22)                        
 LEARNING_RATE = 0.01               # Adam                                         [paper Table III, Sec. III-B]
 TRAINING_EPOCHS = 480              # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
 L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                            [choice A14]
-BACKPROP_WINDOW = 1                # single-step gradient of Eq. (31): state and LSTM state detached every epoch [paper Eq. (31)]
+BACKPROP_WINDOW = None             # no truncation inside a sub-trajectory: full BPTT (KalmanNet V2)  [ref 14]
+SUBTRAJECTORY_LENGTHS = (100, 1000)  # T of the V2 warm-up, then of the fine-tuning (instead of V1: memory) [ref 14]
+WARMUP_EPOCHS = 400                # epochs with the first T; the rest of TRAINING_EPOCHS with the second
+BPTT_BATCH_SIZE = 10               # sub-trajectories per Adam step, M of Ref. [14] Eq. (14)           [ref 14]
 
 # --- Fault detection and integrity (paper Sec. II-D, Fig. 20) ----------------
 FALSE_ALARM_PROBABILITY = 1e-3     # alpha of the chi-square test                 [ref 33]

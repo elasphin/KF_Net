@@ -21,6 +21,13 @@ no early stopping), single-step gradient of Eq. (31) (filter and LSTM state deta
 optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
 gain scale; the model after the last epoch is tested. Every other `exp/...` branch is `exp/paper` with one change.
 
+This branch, `exp/bptt-kalmannet`: back-propagation through time as in KalmanNet [14] instead of the single-step
+gradient. V2: Data01 is divided into sub-trajectories of T = 100 fusion epochs, each filtered from the truth, shuffled
+every epoch, with the gradient through the whole sub-trajectory and one Adam step per 10 of them (loss averaged);
+after `WARMUP_EPOCHS` = 400 the last 80 epochs use T = 1000 (V1 over the whole trajectory does not fit in memory).
+`GAIN_SCALE` (default `True`, outputs in `bptt-kalmannet-gain-scale`; `False`: `bptt-kalmannet`) adds the gain row
+scale of A11: without it the filter diverges at the first Adam step. Compare with `exp/gain-scale` for the BPTT effect.
+
 ## Files
 
 | File | Content |

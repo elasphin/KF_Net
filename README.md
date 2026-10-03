@@ -16,10 +16,14 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 ## Training experiments (branches `exp/...`)
 
 Each branch is one training setup (`settings.EXPERIMENT`); its outputs go to their own folder (see Run).
-`exp/paper` trains exactly as the paper says and nothing more: the whole Data01 trains the network (no validation,
-no early stopping), single-step gradient of Eq. (31) (filter and LSTM state detached every epoch), alternating
-optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
-gain scale; the model after the last epoch is tested. Every other `exp/...` branch is `exp/paper` with one change.
+`main` trains exactly as the paper says and nothing more (the setup of `exp/paper`, merged into `main`): the whole
+Data01 trains the network (no validation, no early stopping), single-step gradient of Eq. (31) (filter and LSTM state
+detached every epoch), alternating optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs
+(Fig. 15), no gradient clipping and no gain scale; the model after the last epoch is tested. Every `exp/...` branch is
+this training with one change: `exp/alternating` (joint instead of alternating optimization), `exp/grad-clip`,
+`exp/gain-scale`, `exp/lr-sweep` (the learning rates of Fig. 15), `exp/input-norm` (L2 or z-score),
+`exp/bptt-kalmannet` (BPTT of KalmanNet [14]) and `exp/tbptt-sensorfusion` (truncated BPTT of
+KalmanNet4SensorFusion). Each branch describes its change in its README and docs/ASSUMPTIONS.md.
 
 This branch, `exp/tbptt-sensorfusion`: the truncated BPTT of KalmanNet4SensorFusion (Song et al., IEEE SPL 2024)
 instead of one Adam step per pass. Data01 is divided into sequences of `SEQUENCE_LENGTH` = 100 fusion epochs, each
@@ -31,8 +35,8 @@ loss and the filters go on. The filter state is detached every epoch (first-orde
 
 ## Running the experiments (Colab / Kaggle)
 
-`run_experiments.ipynb` (the same on every `exp/...` branch) runs one branch: in Colab, File → Open notebook →
-GitHub → `elasphin/KF_Net`, any `exp/...` branch → `run_experiments.ipynb` (on Kaggle: upload it, attach the dataset,
+`run_experiments.ipynb` (the same on every branch) runs `main` or one `exp/...` branch: in Colab, File → Open notebook →
+GitHub → `elasphin/KF_Net`, any branch → `run_experiments.ipynb` (on Kaggle: upload it, attach the dataset,
 Internet on). Choose `BRANCH` and `MODE` in its first cell and run all cells: it clones the branch, sets the data and
 epochs of the mode (`quick`: 1500 / 600 fusion epochs and 3 epochs, to check that a branch runs; `screening`:
 3000 / 1000 and 100 epochs, the same for all branches, to compare them; `full`: all data and 480 epochs, as the
@@ -123,7 +127,7 @@ true orbit) and `test.py` runs it and the traditional EKF with every orbit of `L
 measurements and the same R: `'reference'` (upper bound), `'tle'` (SGP4 of the TLE available before the dataset) and,
 once `leo_pseudorange.network_orbit` is written, `'network'` (neural-network orbit prediction).
 
-The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`, the folder `EXPERIMENT` (e.g. `paper`) inside
+The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`, the folder `EXPERIMENT` (e.g. `main`) inside
 `My Drive/KF_Net_outputs` in Colab (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next
 to the code on my computer.
 

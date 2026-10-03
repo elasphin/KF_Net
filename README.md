@@ -25,11 +25,10 @@ this training with one change: `exp/alternating` (joint instead of alternating o
 `exp/bptt-kalmannet` (BPTT of KalmanNet [14]) and `exp/tbptt-sensorfusion` (truncated BPTT of
 KalmanNet4SensorFusion). Each branch describes its change in its README and docs/ASSUMPTIONS.md.
 
-This branch, `exp/lr-sweep`: the learning rate comes from the command line (`python train.py --lr 0.003`, the same
-`--lr` for `test.py` and `show_results.py`; 0.01 of Table III if not given), and each rate writes to its own folder
-`lr-sweep/lr_<rate>` (the data cache in `lr-sweep/cache` is shared). `python lr_sweep.py` trains and tests every rate of
-Fig. 15 (0.001, 0.003, 0.005, 0.01, 0.02; one already done is skipped) and compares them in `lr-sweep/results_lr_sweep.png`
-(training RMSE and loss per epoch, cf. Fig. 15) and `results_lr_sweep.txt` (`python lr_sweep.py plot`: only the comparison).
+This branch, `exp/lr-sweep`: one learning rate per run, set in `settings.LEARNING_RATE` (0.01 of Table III; Fig. 15
+compares 0.001, 0.003, 0.005, 0.01, 0.02), or with `LEARNING_RATE` in the notebook. Each rate writes to its own folder
+`lr-sweep/lr_<rate>` (the data cache in `lr-sweep/cache` is shared); `python show_results.py compare` compares the
+rates run so far with the other experiments.
 
 ## Running the experiments (Colab / Kaggle)
 
@@ -38,7 +37,7 @@ GitHub → `elasphin/KF_Net`, any branch → `run_experiments.ipynb` (on Kaggle:
 Internet on). Choose `BRANCH` and `MODE` in its first cell and run all cells: it clones the branch, sets the data and
 epochs of the mode (`quick`: 1500 / 600 fusion epochs and 3 epochs, to check that a branch runs; `screening`:
 3000 / 1000 and 100 epochs, the same for all branches, to compare them; `full`: all data and 480 epochs, as the
-paper), runs `train.py`, `test.py` and `show_results.py` (`lr_sweep.py` for `exp/lr-sweep`) and compares every
+paper), runs `train.py`, `test.py` and `show_results.py` and compares every
 experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<experiment>`.
 
 - **Resume** (`train.py`): after every epoch `train.py` keeps the whole training state in
@@ -64,7 +63,6 @@ experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<ex
 | `run_experiments.ipynb` | Colab / Kaggle notebook that runs one experiment branch in one mode and compares |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
 | `check_dataset.py` | Checks of the real dataset reading against the truth (IMR header, truth columns, lever arm, 1-s INS with IMU time offsets, free INS, pseudorange residuals) and the free-INS / EKF GNSS / EKF GNSS+LEO / network baselines on the whole dataset |
-| `lr_sweep.py` | Training and test with every learning rate of Fig. 15, and their comparison (branch `exp/lr-sweep`) |
 | `show_results.py` | Figures and table as in the paper: training loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size; `python show_results.py compare`: table and figure comparing the test results of every experiment branch run |
 
 ## Data

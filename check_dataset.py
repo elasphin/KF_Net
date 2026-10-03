@@ -1,6 +1,7 @@
 """Checks that the real dataset is read and synchronized correctly, and baselines for the training run.
 
     python check_dataset.py          (after train.py: uses the cache and leo_orbit_error_train.json)
+    python check_dataset.py validation   (the validation dataset, A21; after train.py)
     python check_dataset.py test     (the testing dataset; after test.py has written leo_orbit_error_test.json)
 
 Everything is compared with the post-processed truth of the same dataset; the expected values are printed with
@@ -24,7 +25,7 @@ import numpy as np
 import torch
 
 import settings as cfg
-from dataset import IMR_HEADER_SIZE, find_dataset_folder, load_dataset, read_imu, read_rover_info
+from dataset import IMR_HEADER_SIZE, find_dataset_folder, load_dataset, read_imu, read_rover_info, split_folder_name
 from measurements import (EARTH_ROTATION_VECTOR, ecef_to_llh, ecef_to_ned_matrix, gravity, predict_pseudoranges,
                           rotation_matrix_to_vector, skew)
 from navigation import propagate_ins, run_filter, truth_state
@@ -210,10 +211,10 @@ def baselines(data, measurements):
 
 def main():
     split = sys.argv[1] if len(sys.argv) > 1 else 'train'
-    folder = find_dataset_folder(cfg.TRAIN_FOLDER_NAME if split == 'train' else cfg.TEST_FOLDER_NAME)
+    folder = find_dataset_folder(split_folder_name(split))
     imu_type, mounting, _ = read_rover_info(folder / 'README.xml')
     data, orbits = load_dataset(split)
-    measurements = orbits[cfg.LEO_TRAIN_ORBIT if split == 'train' else cfg.LEO_TEST_ORBITS[0]]
+    measurements = orbits[cfg.LEO_TEST_ORBITS[0] if split == 'test' else cfg.LEO_TRAIN_ORBIT]
     print(f'{data.name}: {len(data.fusion_times)} fusion epochs, '
           f'{data.fusion_times[-1] - data.fusion_times[0]:.0f} s, '
           f'interval {np.median(np.diff(data.fusion_times)):.3f} s; IMU interval '

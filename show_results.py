@@ -2,7 +2,8 @@
 
     python show_results.py   (after train.py and test.py, of settings.LEARNING_RATE)
 
-    outputs/results_training.png          loss and position RMSE per epoch (cf. paper Fig. 15) and the table
+    outputs/results_training.png          training and validation loss and position RMSE per epoch (cf. paper
+                                          Fig. 15; validation: A21) and the table
     outputs/results_errors_<orbit>.png    2-D trajectory and north/east/down errors over time (Fig. 18)
     outputs/results_cdf_<orbit>.png       CDF of the north/east/down errors (Fig. 19)
     outputs/results_stanford_<orbit>.png  horizontal and vertical Stanford diagram of each method (Fig. 20)
@@ -15,9 +16,10 @@ Reads outputs/training_info.json, training_history.json, test_summary.json, test
     python show_results.py compare   ->  OUTPUT_ROOT/comparison.txt (also printed), OUTPUT_ROOT/comparison.png
 
 Comparison of the training experiments (branches exp/...) found in settings.OUTPUT_ROOT. An experiment is a
-folder with training_info.json: OUTPUT_ROOT/<experiment> (and lr-sweep/lr_<rate>). Table: training samples
-and epochs (the experiments are comparable only if these are the same: a warning is printed otherwise),
-final training RMSE and, for each LEO orbit of the test, the 3-D RMSE of the network and of the EKF on the
+folder with training_info.json: OUTPUT_ROOT/<experiment> (and lr-sweep/lr_<rate>). Table: training and
+validation samples and epochs (the experiments are comparable only if these are the same: a warning is printed
+otherwise), final training RMSE, epoch and validation RMSE of the tested model (best validation loss, A21) and,
+for each LEO orbit of the test, the 3-D RMSE of the network and of the EKF on the
 testing dataset and the improvement. Figure: the test 3-D RMSE of the network of each experiment, one panel
 per LEO orbit, with the EKF as reference.
 """
@@ -34,6 +36,7 @@ from matplotlib.colors import LogNorm
 import settings as cfg
 
 TRAIN_COLOR = '#1baf7a'
+VALIDATION_COLOR = '#8a4fd6'
 METHOD_COLORS = {'masked_cla_kalmannet': '#2a78d6', 'traditional_ekf': '#eb6834'}
 AXES = (('North', 'north_error_m'), ('East', 'east_error_m'), ('Down', 'down_error_m'))
 REGIONS = ('NO', 'MI', 'HO', 'SU', 'SU&MI')
@@ -72,21 +75,23 @@ def read_experiment(folder):
 def comparison_table(experiments, orbits):
     width = max(len(name) for name in experiments)
     lines = [f'EXPERIMENTS in {cfg.OUTPUT_ROOT}; RMSE in m, test = 3-D RMSE on the testing dataset']
-    for key, label in (('training_samples', 'training samples'), ('max_epochs', 'epochs')):
+    for key, label in (('training_samples', 'training samples'), ('validation_samples', 'validation samples'),
+                       ('max_epochs', 'epochs')):
         values = {e['info'].get(key) for e in experiments.values()}
         if len(values) > 1:
             lines.append(f'WARNING: the experiments differ in {label} {sorted(values, key=str)}: not comparable')
     test_epochs = {e['test'][orbits[0]]['masked_cla_kalmannet']['epochs'] for e in experiments.values() if e['test']}
     if len(test_epochs) > 1:
         lines.append(f'WARNING: the experiments differ in test epochs {sorted(test_epochs)}: not comparable')
-    header = f"{'experiment':<{width}}  samples  epochs  train RMSE"
+    header = f"{'experiment':<{width}}  samples  epochs  train RMSE  best epoch  valid RMSE"
     for orbit in orbits:
         header += f'  | test {orbit}: network      EKF  improvement'
     lines.append(header)
     for name, e in experiments.items():
         info = e['info']
         line = (f"{name:<{width}}  {info['training_samples']:7d}  {info.get('epochs_run', 0):6d}  "
-                f"{info.get('final_train_position_rmse_m', float('nan')):10.3f}")
+                f"{info.get('final_train_position_rmse_m', float('nan')):10.3f}  {info.get('best_epoch', '-'):>10}  "
+                f"{info.get('best_validation_position_rmse_m', float('nan')):10.3f}")
         for orbit in orbits:
             if e['test'] and orbit in e['test']:
                 network = e['test'][orbit]['masked_cla_kalmannet']['rmse_3d_m']
@@ -200,6 +205,8 @@ def test_lines(orbit):
 lines = [
     'DATA',
     f"  training samples (epochs)   {info['training_samples']}",
+    f"  validation dataset (A21)    {info.get('validation_dataset', '-')}",
+    f"  validation samples          {info.get('validation_samples', '-')}",
     f"  test samples                {test[orbits[0]]['masked_cla_kalmannet']['epochs']}",
     f"  LEO orbit, training         {info['leo_train_orbit']}",
     f"  max measurements N_max      {info['max_measurements']}",
@@ -213,6 +220,10 @@ lines = [
     f"  epochs run / max            {info['epochs_run']} / {info['max_epochs']}",
     f"  final train loss            {info['final_train_loss']:.4g}",
     f"  final train RMSE            {info['final_train_position_rmse_m']:.3f} m",
+    f"  final validation RMSE       {info.get('final_validation_position_rmse_m', float('nan')):.3f} m",
+    f"  tested model: epoch         {info.get('best_epoch', '-')} (best validation loss, A21)",
+    f"  its validation RMSE         {info.get('best_validation_position_rmse_m', float('nan')):.3f} m",
+    f"  EKF validation RMSE         {info.get('classical_ekf_validation_position_rmse_m', float('nan')):.3f} m",
     f"  L2 weight                   {info['l2_weight']}",
     f"  training time               {info['training_time_s'] / 3600:.2f} h",
     'TEST by LEO orbit (A26)   LEO range RMS  3D RMSE network / EKF  LEO fault epochs network / EKF',
@@ -232,6 +243,11 @@ epochs = [h['epoch'] for h in history]
 fig, axes = plt.subplots(1, 3, figsize=(20, 8), gridspec_kw={'width_ratios': [1, 1, 0.9]})
 for ax, key, label in ((axes[0], 'loss', 'Loss, Eq. (32)'), (axes[1], 'position_rmse_m', 'Position RMSE [m]')):
     ax.plot(epochs, [h[f'train_{key}'] for h in history], color=TRAIN_COLOR, linewidth=2, label='train')
+    if 'validation_loss' in history[0]:
+        ax.plot(epochs, [h[f'validation_{key}'] for h in history], color=VALIDATION_COLOR, linewidth=2,
+                label='validation')
+        ax.axvline(info['best_epoch'], color=VALIDATION_COLOR, linewidth=1, linestyle='--',
+                   label=f"tested model (epoch {info['best_epoch']})")
     ax.set(xlabel='Epoch', ylabel=label, title=label)
     finish(ax)
 axes[0].set_yscale('log')

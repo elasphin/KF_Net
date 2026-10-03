@@ -1,6 +1,6 @@
 """Show the training and test results as the paper does, plus a table of the run settings.
 
-    python show_results.py   (after train.py and test.py)
+    python show_results.py --lr 0.003   (after train.py and test.py with the same --lr; lr_sweep.py compares them)
 
     outputs/results_training.png          loss and position RMSE per epoch (cf. paper Fig. 15) and the table
     outputs/results_errors_<orbit>.png    2-D trajectory and north/east/down errors over time (Fig. 18)

@@ -1,6 +1,7 @@
 """Online test on the testing dataset (paper Sec. III-C): Masked CLA KalmanNet vs traditional EKF.
 
-    python test.py   ->  outputs/test_summary.json, outputs/test_epochs.csv   (plots: show_results.py)
+    python test.py --lr 0.003  ->  outputs/test_summary.json, outputs/test_epochs.csv   (plots: show_results.py)
+    (the network trained by train.py --lr 0.003; outputs = OUTPUT_ROOT/lr-sweep/lr_0.003)
 
 The network trained once (LEO_TRAIN_ORBIT) is tested with every LEO filter orbit of
 settings.LEO_TEST_ORBITS on the same measurements and the same R (A26): the true orbit

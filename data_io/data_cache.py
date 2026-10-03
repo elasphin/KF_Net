@@ -5,7 +5,7 @@
 
 Reading the RINEX/IMU/truth files, the GNSS satellite orbits and the LEO orbit integration and
 simulation give the same result in every run (fixed seeds), so they are done once and kept in
-OUTPUT_FOLDER/cache/<split>_<key>.pkl. The key is a hash of everything they depend on:
+EXPERIMENT_FOLDER/cache/<split>_<key>.pkl (shared by the runs of every learning rate). The key is a hash of everything they depend on:
   - all settings except the network, training, integrity and run-time ones (NOT_DATA_SETTINGS),
   - the LEO filter orbits of the split (LEO_TRAIN_ORBIT or LEO_TEST_ORBITS, A26) and its MAX_FUSION_EPOCHS,
   - the code that makes them (DATA_CODE files),
@@ -32,7 +32,7 @@ DATA_CODE = ('data_io/read_dataset.py', 'data_io/data_cache.py', 'measurements/e
              'measurements/gnss_measurements.py', 'measurements/leo_pseudorange.py', 'measurements/egm96_degree20.txt')
 NOT_DATA_SETTINGS = {
     'CONV_FILTERS', 'CONV_KERNEL_SIZE', 'POOL_KERNEL_SIZE', 'LSTM_UNITS', 'LSTM_LAYERS', 'LSTM_DROPOUT',
-    'FC_HIDDEN_UNITS', 'MASK_EPSILON', 'RANDOM_SEED', 'LEARNING_RATE', 'TRAINING_EPOCHS', 'L2_WEIGHT',
+    'FC_HIDDEN_UNITS', 'MASK_EPSILON', 'RANDOM_SEED', 'LEARNING_RATE', 'LEARNING_RATES', 'TRAINING_EPOCHS', 'L2_WEIGHT',
     'BACKPROP_WINDOW',
     'FALSE_ALARM_PROBABILITY', 'HORIZONTAL_PL_FACTOR', 'VERTICAL_PL_FACTOR', 'ALERT_LIMIT',
     'INS_MECHANIZATION', 'DATA_CACHE',
@@ -40,7 +40,8 @@ NOT_DATA_SETTINGS = {
     'MAX_FUSION_EPOCHS',                           # only the limit of the split is in the key
     'TRAIN_FOLDER_NAME', 'TEST_FOLDER_NAME',      # the folder of the split is in the key itself
     'PROJECT_FOLDER', 'COLAB_FOLDER', 'COLAB_OUTPUT_FOLDER', 'KAGGLE_FOLDER', 'KAGGLE_OUTPUT_FOLDER', 'LOCAL_FOLDER',
-    'LOCAL_OUTPUT_FOLDER',                        # candidates of DATASET_FOLDER / OUTPUT_FOLDER (these are in the key)
+    'LOCAL_OUTPUT_FOLDER',                        # candidates of DATASET_FOLDER / OUTPUT_ROOT (these are in the key)
+    'OUTPUT_FOLDER',                              # the folder of one learning rate; EXPERIMENT_FOLDER is in the key
 }
 
 
@@ -115,7 +116,7 @@ def read_and_simulate(split):
     """(data, GNSS epochs, LEO epochs, LEO range errors): from the cache, or computed and then kept."""
     if not cfg.DATA_CACHE:
         return read_and_simulate_now(split)
-    folder = cfg.OUTPUT_FOLDER / 'cache'
+    folder = cfg.EXPERIMENT_FOLDER / 'cache'
     path = folder / f'{split}_{cache_key(split)}.pkl'
     if path.exists():
         print(f'dataset and measurements read from {path}')

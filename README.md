@@ -21,6 +21,12 @@ no early stopping), single-step gradient of Eq. (31) (filter and LSTM state deta
 optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
 gain scale; the model after the last epoch is tested. Every other `exp/...` branch is `exp/paper` with one change.
 
+This branch, `exp/lr-sweep`: the learning rate comes from the command line (`python train.py --lr 0.003`, the same
+`--lr` for `test.py` and `show_results.py`; 0.01 of Table III if not given), and each rate writes to its own folder
+`lr-sweep/lr_<rate>` (the data cache in `lr-sweep/cache` is shared). `python lr_sweep.py` trains and tests every rate of
+Fig. 15 (0.001, 0.003, 0.005, 0.01, 0.02; one already done is skipped) and compares them in `lr-sweep/results_lr_sweep.png`
+(training RMSE and loss per epoch, cf. Fig. 15) and `results_lr_sweep.txt` (`python lr_sweep.py plot`: only the comparison).
+
 ## Files
 
 | File | Content |
@@ -38,6 +44,7 @@ gain scale; the model after the last epoch is tested. Every other `exp/...` bran
 | `train.py` | Offline training on the whole training dataset, Eq. (30)-(32) |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
 | `check_dataset.py` | Checks of the real dataset reading against the truth (IMR header, truth columns, lever arm, 1-s INS with IMU time offsets, free INS, pseudorange residuals) and the free-INS / EKF GNSS / EKF GNSS+LEO / network baselines on the whole dataset |
+| `lr_sweep.py` | Training and test with every learning rate of Fig. 15, and their comparison (branch `exp/lr-sweep`) |
 | `show_results.py` | Figures and table as in the paper: training loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size |
 
 ## Data

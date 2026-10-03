@@ -10,6 +10,7 @@ Every value carries a source tag:
 
 python settings.py shows the dataset and output folders of the current environment.
 """
+import argparse
 import os
 from pathlib import Path
 
@@ -46,11 +47,20 @@ def get_folders() -> tuple[Path, Path]:
     return LOCAL_FOLDER, LOCAL_OUTPUT_FOLDER
 
 
+def command_line_learning_rate(default):
+    """--lr of the command line (python train.py --lr 0.003, also test.py and show_results.py), else default."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--lr', type=float, default=default)
+    return parser.parse_known_args()[0].lr
+
+
 DATASET_FOLDER, OUTPUT_ROOT = get_folders()
 # Training setup of this branch (exp/<EXPERIMENT>): its outputs and its data cache go to OUTPUT_ROOT/EXPERIMENT,
-# so the runs of the experiment branches do not overwrite each other.
-EXPERIMENT = 'paper'
-OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
+# so the runs of the experiment branches do not overwrite each other. Here: exp/paper with the learning rates of
+# Fig. 15, one run each in EXPERIMENT_FOLDER/lr_<rate> (OUTPUT_FOLDER, set with LEARNING_RATE below); the data cache
+# is shared by them.
+EXPERIMENT = 'lr-sweep'
+EXPERIMENT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
 KAGGLE_DATASET = 'elasphin/mknet-project'                      # [paper Sec. III]
@@ -121,7 +131,9 @@ MASK_EPSILON = 1e-6                # epsilon of Eq. (22)                        
 # --- Training (paper Sec. II-C, Table III, Fig. 15) --------------------------
 # Exactly as in the paper: the whole training dataset trains the network, no validation, early stopping,
 # gradient clipping or gain scale; the model after the last epoch is tested.
-LEARNING_RATE = 0.01               # Adam                                         [paper Table III, Sec. III-B]
+LEARNING_RATES = (0.001, 0.003, 0.005, 0.01, 0.02)  # initial learning rates compared in Fig. 15 (lr_sweep.py) [paper Fig. 15]
+LEARNING_RATE = command_line_learning_rate(0.01)  # Adam, this run: --lr, else Table III [paper Table III, Sec. III-B]
+OUTPUT_FOLDER = EXPERIMENT_FOLDER / f'lr_{LEARNING_RATE:g}'   # outputs of this run
 TRAINING_EPOCHS = 480              # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
 L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                            [choice A14]
 BACKPROP_WINDOW = 1                # single-step gradient of Eq. (31): state and LSTM state detached every epoch [paper Eq. (31)]

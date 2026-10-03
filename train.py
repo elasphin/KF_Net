@@ -1,15 +1,16 @@
 """Offline training of the Masked CLA KalmanNet on the training dataset (paper Sec. II-C, Fig. 2).
 
-    python train.py  ->  outputs/masked_cla_network.pt (model after the last epoch),
-                         outputs/training_history.json, outputs/training_info.json
+    python train.py --lr 0.003  ->  outputs/masked_cla_network.pt (model after the last epoch),
+                                    outputs/training_history.json, outputs/training_info.json
+    (outputs = OUTPUT_ROOT/lr-sweep/lr_0.003; lr_sweep.py runs every learning rate of Fig. 15)
 
-Training exactly as in the paper (branch exp/paper), nothing added:
+Training of exp/paper with one change (branch exp/lr-sweep): the learning rate comes from the command line.
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
 averaged over the epochs and the three components (MSE, Table III) plus
 gamma ||Theta||^2 (Eq. (32)); single-step gradient of Eq. (31): the filter state and the
 LSTM state are detached at every fusion epoch (settings.BACKPROP_WINDOW = 1).
-Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15).
+Adam with the learning rate --lr (0.01 of Table III if not given) for 480 epochs (Fig. 15).
 Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
 epoch the filter part theta (LSTM, attention, FC) is updated with the encoder
 psi (masked CNN) frozen, then psi is updated with theta frozen; one Adam step

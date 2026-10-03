@@ -21,6 +21,14 @@ no early stopping), single-step gradient of Eq. (31) (filter and LSTM state deta
 optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
 gain scale; the model after the last epoch is tested. Every other `exp/...` branch is `exp/paper` with one change.
 
+This branch, `exp/tbptt-sensorfusion`: the truncated BPTT of KalmanNet4SensorFusion (Song et al., IEEE SPL 2024)
+instead of one Adam step per pass. Data01 is divided into sequences of `SEQUENCE_LENGTH` = 100 fusion epochs, each
+filtered from the truth, shuffled every epoch and run in lockstep (all in one batch, as their batch size 256 is larger
+than the ~90 sequences); after every window of `TBPTT_WINDOW` = 10 epochs one Adam step follows on the mean window
+loss and the filters go on. The filter state is detached every epoch (first-order Markov), the LSTM state every
+`LSTM_DETACH_STEP` = 5 epochs. The other settings (learning rate, gamma, no clipping, alternation) are those of
+`exp/paper`; as there, only the position rows of K are trained.
+
 ## Files
 
 | File | Content |

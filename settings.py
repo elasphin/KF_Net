@@ -49,7 +49,7 @@ def get_folders() -> tuple[Path, Path]:
 DATASET_FOLDER, OUTPUT_ROOT = get_folders()
 # Training setup of this branch (exp/<EXPERIMENT>): its outputs and its data cache go to OUTPUT_ROOT/EXPERIMENT,
 # so the runs of the experiment branches do not overwrite each other.
-EXPERIMENT = 'paper'
+EXPERIMENT = 'tbptt-sensorfusion'   # exp/paper with the truncated BPTT of KalmanNet4SensorFusion
 OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
@@ -124,7 +124,13 @@ MASK_EPSILON = 1e-6                # epsilon of Eq. (22)                        
 LEARNING_RATE = 0.01               # Adam                                         [paper Table III, Sec. III-B]
 TRAINING_EPOCHS = 480              # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
 L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                            [choice A14]
-BACKPROP_WINDOW = 1                # single-step gradient of Eq. (31): state and LSTM state detached every epoch [paper Eq. (31)]
+# Truncated BPTT of KalmanNet4SensorFusion (fusion_trainer.py): sequences of SEQUENCE_LENGTH fusion epochs, each from
+# the truth, run in lockstep; one Adam step on the mean loss of every window of TBPTT_WINDOW epochs (the filter goes on).
+BACKPROP_WINDOW = 1                # filter state detached every epoch: first-order Markov (their model) [paper Eq. (31)]
+SEQUENCE_LENGTH = 100              # fusion epochs per training sequence (their train_seq_len)
+TBPTT_WINDOW = 10                  # fusion epochs per Adam step (their slide_win_size)
+LSTM_DETACH_STEP = 5               # LSTM state detached every d fusion epochs (their detach_step)
+TBPTT_BATCH_SIZE = None            # sequences per batch, in lockstep; None = all (their batch_size 256 > ~90 sequences)
 
 # --- Fault detection and integrity (paper Sec. II-D, Fig. 20) ----------------
 FALSE_ALARM_PROBABILITY = 1e-3     # alpha of the chi-square test                 [ref 33]

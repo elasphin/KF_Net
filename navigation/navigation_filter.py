@@ -101,9 +101,24 @@ def stanford_percentages(error, protection_level):
 
 
 # --- Filter (paper Fig. 2) ---------------------------------------------------
-def run_filter(data, measurements, network=None, first=0, last=None, fault_detection=True, training=False,
-               max_measurements=None):
+def run_filter(*args, **kwargs):
+    """filter_steps run to the end without pauses: the result of the filter."""
+    steps = filter_steps(*args, **kwargs)
+    while True:
+        try:
+            next(steps)
+        except StopIteration as stop:
+            return stop.value
+
+
+def filter_steps(data, measurements, network=None, first=0, last=None, fault_detection=True, training=False,
+                 max_measurements=None):
     """Filter over fusion epochs first..last, starting from the truth at 'first' (A7).
+
+    A generator (branch exp/tbptt-sensorfusion): in training it pauses (yield) after the loss of every window of
+    TBPTT_WINDOW fusion epochs (counted from 'first') has been back-propagated, so the caller can take an Adam step
+    before the filter goes on (truncated BPTT of KalmanNet4SensorFusion); its return value is the result.
+    run_filter runs it to the end.
 
     network=None: traditional EKF gain, with at most max_measurements rows (A16).
     training=True: accumulates the gradient of the Eq. (32) loss (A15). The filter runs in NumPy; the gradient
@@ -111,7 +126,9 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
     (a correction at k shifts the prior at k+1 by Phi dx_k), the innovation shifts by -H link, so
     dx_k = K_k (nu_k - H_k link_k) gives the sensitivity (I - K H) Phi S + (dK/dtheta) nu, and the network
     inputs of the next epoch (innovation, residual after the update, state residual and state innovation)
-    carry the same shift. The gradient is truncated every BACKPROP_WINDOW epochs.
+    carry the same shift. The filter state is detached every BACKPROP_WINDOW (= 1) epochs: first-order Markov,
+    as KalmanNet4SensorFusion; the LSTM state every LSTM_DETACH_STEP epochs and at the end of every window.
+    The gradient of a window is that of the mean loss of its epochs.
     The loss counts every epoch, also those without a usable measurement (no correction).
     The covariance P is used only by the EKF gain, the fault detection and the protection
     levels; a network run without fault detection (training, validation) leaves it out and
@@ -124,7 +141,7 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
     no_shift = torch.zeros(STATE_SIZE, dtype=torch.float64)
     previous = {'accel': data.accel[i], 'gyro': data.gyro[i], 'state': state, 'residuals': {}, 'shift': no_shift,
                 'state_residual': no_shift, 'state_innovation': no_shift}
-    hidden, link, window_loss, loss_sum = None, no_shift, 0.0, 0.0
+    hidden, link, window_loss, window_epochs, loss_sum = None, no_shift, 0.0, 0, 0.0
     if network is not None:
         network.train(training)
     rows, gain_square_sum, gain_columns = [], np.zeros(STATE_SIZE), 0
@@ -169,10 +186,10 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
             with torch.set_grad_enabled(training):
                 prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:3])
                 error = prior_error - shift[:3] - dx_tensor[:3]           # p_k - (p_k,k-1 + K dy_k)
-                loss = error @ error / (error.numel() * (last - first))   # MSE of Eq. (30), Table III
-                window_loss = window_loss + loss
+                loss = error @ error / error.numel()                      # MSE of Eq. (30), Table III
+                window_loss, window_epochs = window_loss + loss, window_epochs + 1
                 link = link + dx_tensor
-            loss_sum += loss.item()
+            loss_sum += loss.item() / (last - first)
 
         new_state = apply_correction(state, dx)
         if network is not None:                        # network input of epoch k+1, paper Eq. (11)-(14)
@@ -188,14 +205,20 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
                             'state_innovation': torch.from_numpy(dx) + dx_tensor - dx_tensor.detach()}  # Eq. (12)
         state = new_state
 
-        if training and (k % cfg.BACKPROP_WINDOW == 0 or k == last):
-            if torch.is_tensor(window_loss) and window_loss.requires_grad:
-                window_loss.backward()
-            window_loss, link = 0.0, no_shift
-            hidden = None if hidden is None else tuple(h.detach() for h in hidden)
-            previous = {name: value.detach() if torch.is_tensor(value) else value for name, value in previous.items()}
-            previous['residuals'] = {s: value.detach() for s, value in previous['residuals'].items()}
-            previous['shift'] = no_shift
+        if training:
+            window_end = (k - first) % cfg.TBPTT_WINDOW == 0 or k == last
+            if (k - first) % cfg.BACKPROP_WINDOW == 0 or k == last:             # filter state
+                link = no_shift
+                previous = {name: value.detach() if torch.is_tensor(value) else value for name, value in previous.items()}
+                previous['residuals'] = {s: value.detach() for s, value in previous['residuals'].items()}
+                previous['shift'] = no_shift
+            if (k - first) % cfg.LSTM_DETACH_STEP == 0 or window_end:            # LSTM state
+                hidden = None if hidden is None else tuple(h.detach() for h in hidden)
+            if window_end:                             # mean loss of the window; the caller takes an Adam step
+                if torch.is_tensor(window_loss) and window_loss.requires_grad:
+                    (window_loss / window_epochs).backward()
+                window_loss, window_epochs = 0.0, 0
+                yield
 
         antenna, truth = state.position + state.attitude @ data.lever_arm, data.truth_antenna_position[k]
         rows.append((times[k], ecef_to_ned_matrix(*ecef_to_llh(truth)[:2]) @ (antenna - truth),

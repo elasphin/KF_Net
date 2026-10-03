@@ -37,11 +37,11 @@ epochs of the mode (`quick`: 1500 / 600 fusion epochs and 3 epochs, to check tha
 paper), runs `train.py`, `test.py` and `show_results.py` (`lr_sweep.py` for `exp/lr-sweep`) and compares every
 experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<experiment>`.
 
-- **Resume** (`training_state.py`): after every epoch `train.py` keeps the whole training state in
+- **Resume** (`train.py`): after every epoch `train.py` keeps the whole training state in
   `training_state.pt`. If a session ends, running it again (all cells of the notebook) continues after the last
   saved epoch, with the same result as an uninterrupted run. A change of settings, training code or data starts a
   new training; raising `TRAINING_EPOCHS` continues a finished one; `python train.py --restart` always starts anew.
-- **Comparison** (`compare_experiments.py`): reads every experiment folder of `OUTPUT_ROOT` and writes
+- **Comparison** (`show_results.py compare`): reads every experiment folder of `OUTPUT_ROOT` and writes
   `comparison.txt` (training samples and epochs, with a warning if they differ; final training RMSE; test 3-D RMSE
   of the network and the EKF and the improvement, per LEO orbit) and `comparison.png` (test 3-D RMSE of each
   experiment, one panel per LEO orbit, EKF as reference). The experiments must have run with the same mode.
@@ -51,23 +51,17 @@ experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<ex
 | File | Content |
 |---|---|
 | `settings.py` | All settings with their source, and the dataset and output folders in Colab (Google Drive), on Kaggle or on my computer |
-| `data_io/read_dataset.py` | Finds the dataset folders under that path (or downloads the needed files) and reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header |
-| `data_io/data_cache.py` | Reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
-| `measurements/earth_models.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4) |
-| `measurements/gnss_measurements.py` | Satellite positions/clocks and the pseudorange model of Eq. (1) |
-| `measurements/leo_pseudorange.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5) (Student-t MP/NLOS noise with the variance of Eq. (4), A3), and the orbit error variance of the filter |
-| `measurements/egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_pseudorange.py`) |
-| `navigation/ins_filter.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update |
-| `navigation/masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
-| `navigation/navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
-| `train.py` | Offline training on the whole training dataset, Eq. (30)-(32) |
-| `training_state.py` | Resume of an interrupted training: the training state after every epoch (`train.py`) |
-| `compare_experiments.py` | Table and figure comparing the test results of every experiment branch run |
+| `dataset.py` | Finds the dataset folders under that path (or downloads the needed files) and reads RINEX, IMU (.imr), truth, SP3, CLK, broadcast header; reads the dataset, prepares the GNSS and LEO measurements and keeps them on disk between runs |
+| `measurements.py` | Constants, frames, gravity, Klobuchar, Saastamoinen, variance of Eq. (3)-(4); satellite positions/clocks and the pseudorange model of Eq. (1) |
+| `leo_pseudorange.py` | LEO orbits from TLE files (numerical reference orbit with EGM96 20x20, Sun, Moon; filter orbit: true, SGP4 of a TLE or neural network), the LEO pseudorange simulation, Eq. (1), (5) (Student-t MP/NLOS noise with the variance of Eq. (4), A3), and the orbit error variance of the filter |
+| `egm96_degree20.txt` | EGM96 gravity coefficients up to degree 20 (for `leo_pseudorange.py`) |
+| `navigation.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update; network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29); the filter of Fig. 2 (network or traditional EKF gain), shared by training and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
+| `train.py` | Offline training on the whole training dataset, Eq. (30)-(32); resume of an interrupted training: the training state after every epoch |
 | `run_experiments.ipynb` | Colab / Kaggle notebook that runs one experiment branch in one mode and compares |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
 | `check_dataset.py` | Checks of the real dataset reading against the truth (IMR header, truth columns, lever arm, 1-s INS with IMU time offsets, free INS, pseudorange residuals) and the free-INS / EKF GNSS / EKF GNSS+LEO / network baselines on the whole dataset |
 | `lr_sweep.py` | Training and test with every learning rate of Fig. 15, and their comparison (branch `exp/lr-sweep`) |
-| `show_results.py` | Figures and table as in the paper: training loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size |
+| `show_results.py` | Figures and table as in the paper: training loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size; `python show_results.py compare`: table and figure comparing the test results of every experiment branch run |
 
 ## Data
 
@@ -83,7 +77,15 @@ The data folder is set at the top of `settings.py` (`python settings.py` shows i
    in a notebook cell first.
 2. **Kaggle notebook** with the dataset attached: read directly from `/kaggle/input/datasets/elasphin/mknet-project`
    (all of `/kaggle/input` is searched if that folder is missing).
-3. **My computer**: anywhere under `Dataset/`.
+3. **My computer**: anywhere under `Dataset/` next to the code (any depth), for example:
+
+   ```
+   Dataset/
+   ├── Data01_20230102_ISA-100C_Vehicle_Complex/
+   ├── Data02_20220309_ISA-100C_Vehicle_Complex/
+   ├── LEO_TLE/           # TLE files (*.txt) of the LEO satellites around both days
+   └── products/          # *.sp3, *.clk, brdm* of both days, if not inside the data folders
+   ```
 
 If the folders are not found there, only the needed files are downloaded with `kagglehub`. Put your Kaggle
 API token in `~/.kaggle/kaggle.json` (or set `KAGGLE_USERNAME` and `KAGGLE_KEY`).
@@ -93,7 +95,8 @@ dataset folder. They must cover the dataset days and at least a day around them 
 prediction and a newer one for the reference orbit); the public Kaggle dataset does not contain them.
 
 Precise orbit/clock products and the broadcast navigation file of the observation day (`*.sp3`, `*.clk`,
-`brdm*`) are read from the data folder or from `products/` inside the dataset path. If the Kaggle folders do
+`brdm*`) are read from the data folder, then from `products/` inside the dataset path, then from the dataset
+folder itself (on Kaggle they are at its root); an SP3 or CLK file that does not cover the dataset stops the run. If the Kaggle folders do
 not contain them, download the MGEX products of that day (e.g. from the IGS/BKG or CDDIS archives) into that
 `products/` folder.
 
@@ -128,7 +131,7 @@ that both start with a static period (Data01: about 13 min, Data02: about 2 min 
 For a quick run set `MAX_FUSION_EPOCHS` (one limit per dataset, e.g. `{'train': 1500, 'test': 600}`) and
 `TRAINING_EPOCHS` in `settings.py`. Everything is then done on the first `MAX_FUSION_EPOCHS[split]` fusion epochs
 of each dataset only: the RINEX observations and the two truth files are read only
-over them, the SP3 and CLK products over them +- 3 h (`read_dataset.PRODUCT_MARGIN`, enough for the 10-point SP3
+over them, the SP3 and CLK products over them +- 3 h (`dataset.PRODUCT_MARGIN`, enough for the 10-point SP3
 interpolation, so the GNSS satellite positions and clocks are the same as with the whole files), the LEO orbits are
 made at these epochs, and the LEO C/N0 per elevation (`mean_cn0_bins`) and the LEO orbit error of R come from them. The LEO reference orbit is still integrated from the epoch of its
 reference TLE (docs/ASSUMPTIONS.md A1), so the time from that epoch to the fusion epochs is not shortened. The time of
@@ -141,7 +144,7 @@ for bit against the Python versions):
 
 | Setting | Values | What it does |
 |---|---|---|
-| `INS_MECHANIZATION` | `'numba'` (default) or `'python'` | INS mechanization of every IMU sample (`ins_filter.propagate_ins`): the Python loop of `mechanize`, or the same operations compiled with Numba (`ins_filter.mechanize_samples_numba`), ~16x faster |
+| `INS_MECHANIZATION` | `'numba'` (default) or `'python'` | INS mechanization of every IMU sample (`navigation.propagate_ins`): the Python loop of `mechanize`, or the same operations compiled with Numba (`navigation.mechanize_samples_numba`), ~16x faster |
 | `LEO_FORCE_MODEL` | `'numba'` (default) or `'python'` | Equations of motion of the LEO reference orbit (EGM96 20x20, Sun, Moon) integrated by DOP853: `leo_pseudorange.equations_of_motion` or its compiled copy `leo_pseudorange.equations_of_motion_numba`, ~70x faster |
 | `DATA_CACHE` | `True` (default) or `False` | Keeps the read dataset and the simulated measurements in `OUTPUT_FOLDER/cache` (one file per split); later runs read that file. A new file is made when a setting that changes the data, the code that makes it or an input file (dataset, products, TLE) changes; network, training and integrity settings do not count. Delete the folder to force a new one. |
 

@@ -27,6 +27,25 @@ This branch, `exp/lr-sweep`: the learning rate comes from the command line (`pyt
 Fig. 15 (0.001, 0.003, 0.005, 0.01, 0.02; one already done is skipped) and compares them in `lr-sweep/results_lr_sweep.png`
 (training RMSE and loss per epoch, cf. Fig. 15) and `results_lr_sweep.txt` (`python lr_sweep.py plot`: only the comparison).
 
+## Running the experiments (Colab / Kaggle)
+
+`run_experiments.ipynb` (the same on every `exp/...` branch) runs one branch: in Colab, File → Open notebook →
+GitHub → `elasphin/KF_Net`, any `exp/...` branch → `run_experiments.ipynb` (on Kaggle: upload it, attach the dataset,
+Internet on). Choose `BRANCH` and `MODE` in its first cell and run all cells: it clones the branch, sets the data and
+epochs of the mode (`quick`: 1500 / 600 fusion epochs and 3 epochs, to check that a branch runs; `screening`:
+3000 / 1000 and 100 epochs, the same for all branches, to compare them; `full`: all data and 480 epochs, as the
+paper), runs `train.py`, `test.py` and `show_results.py` (`lr_sweep.py` for `exp/lr-sweep`) and compares every
+experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<experiment>`.
+
+- **Resume** (`training_state.py`): after every epoch `train.py` keeps the whole training state in
+  `training_state.pt`. If a session ends, running it again (all cells of the notebook) continues after the last
+  saved epoch, with the same result as an uninterrupted run. A change of settings, training code or data starts a
+  new training; raising `TRAINING_EPOCHS` continues a finished one; `python train.py --restart` always starts anew.
+- **Comparison** (`compare_experiments.py`): reads every experiment folder of `OUTPUT_ROOT` and writes
+  `comparison.txt` (training samples and epochs, with a warning if they differ; final training RMSE; test 3-D RMSE
+  of the network and the EKF and the improvement, per LEO orbit) and `comparison.png` (test 3-D RMSE of each
+  experiment, one panel per LEO orbit, EKF as reference). The experiments must have run with the same mode.
+
 ## Files
 
 | File | Content |
@@ -42,6 +61,9 @@ Fig. 15 (0.001, 0.003, 0.005, 0.01, 0.02; one already done is skipped) and compa
 | `navigation/masked_cla_network.py` | Network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29) |
 | `navigation/navigation_filter.py` | The filter of Fig. 2 (network or traditional EKF gain), shared by training and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
 | `train.py` | Offline training on the whole training dataset, Eq. (30)-(32) |
+| `training_state.py` | Resume of an interrupted training: the training state after every epoch (`train.py`) |
+| `compare_experiments.py` | Table and figure comparing the test results of every experiment branch run |
+| `run_experiments.ipynb` | Colab / Kaggle notebook that runs one experiment branch in one mode and compares |
 | `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
 | `check_dataset.py` | Checks of the real dataset reading against the truth (IMR header, truth columns, lever arm, 1-s INS with IMU time offsets, free INS, pseudorange residuals) and the free-INS / EKF GNSS / EKF GNSS+LEO / network baselines on the whole dataset |
 | `lr_sweep.py` | Training and test with every learning rate of Fig. 15, and their comparison (branch `exp/lr-sweep`) |

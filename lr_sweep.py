@@ -32,8 +32,7 @@ def training_done(folder):
     info_file = folder / 'training_info.json'
     if not info_file.exists():
         return False
-    info = json.loads(info_file.read_text())
-    return info.get('epochs_run') == info['max_epochs']
+    return json.loads(info_file.read_text()).get('epochs_run', 0) >= cfg.TRAINING_EPOCHS
 
 
 def test_done(folder):

@@ -28,9 +28,8 @@ A change in any of these makes a new cache file (the old one of that split is re
 orbit error variance of the filter R (A25) is not kept: it is set from leo_orbit_error_train.json
 in every run, as before.
 
-Statistics taken from the data (LEO C/N0 per elevation, A3; orbit term of R, A25): on the training dataset
-only from its training part (epochs 0..training_split, A21), so the validation part does not shape the training
-measurements; on the testing dataset from the whole dataset (its own environment).
+Statistics taken from the data (LEO C/N0 per elevation, A3; orbit term of R, A25): from the whole dataset (the
+whole training dataset trains the network, as in the paper; the testing dataset has its own environment).
 """
 import hashlib
 import math
@@ -466,7 +465,7 @@ DATA_CODE = ('dataset.py', 'measurements.py', 'leo_pseudorange.py', 'egm96_degre
 NOT_DATA_SETTINGS = {
     'CONV_FILTERS', 'CONV_KERNEL_SIZE', 'POOL_KERNEL_SIZE', 'LSTM_UNITS', 'LSTM_LAYERS', 'LSTM_DROPOUT',
     'FC_HIDDEN_UNITS', 'MASK_EPSILON', 'RANDOM_SEED', 'LEARNING_RATE', 'TRAINING_EPOCHS', 'L2_WEIGHT',
-    'BACKPROP_WINDOW', 'EARLY_STOPPING_PATIENCE', 'GRADIENT_CLIP_NORM',
+    'BACKPROP_WINDOW',
     'FALSE_ALARM_PROBABILITY', 'HORIZONTAL_PL_FACTOR', 'VERTICAL_PL_FACTOR', 'ALERT_LIMIT',
     'INS_MECHANIZATION', 'DATA_CACHE',
     'LEO_TRAIN_ORBIT', 'LEO_TEST_ORBITS',          # only the orbits of the split are in the key (split_orbits)
@@ -475,17 +474,6 @@ NOT_DATA_SETTINGS = {
     'PROJECT_FOLDER', 'COLAB_FOLDER', 'COLAB_OUTPUT_FOLDER', 'KAGGLE_FOLDER', 'KAGGLE_OUTPUT_FOLDER', 'LOCAL_FOLDER',
     'LOCAL_OUTPUT_FOLDER',                        # candidates of DATASET_FOLDER / OUTPUT_FOLDER (these are in the key)
 }
-
-
-def training_split(fusion_epoch_count):
-    """Last epoch of the training part of the training dataset (A21): train 0..split, validation split..last."""
-    last = fusion_epoch_count - 1
-    return int(round(last * (1.0 - cfg.VALIDATION_FRACTION)))
-
-
-def statistics_epochs(split, fusion_epoch_count):
-    """Epochs whose data statistics make the LEO C/N0 and the R orbit term (A3, A25)."""
-    return range(training_split(fusion_epoch_count) + 1 if split == 'train' else fusion_epoch_count)
 
 
 def split_orbits(split):
@@ -502,7 +490,7 @@ def simulate_measurements(data, split):
     gnss = prepare_gnss_measurements(data)
     print(f'GNSS measurements: {time.time() - start:.1f} s')
     start = time.time()
-    cn0_bins = mean_cn0_bins(data, gnss, statistics_epochs(split, len(data.fusion_times)))
+    cn0_bins = mean_cn0_bins(data, gnss, range(len(data.fusion_times)))          # whole dataset (A3)
     leo, range_errors = simulate_leo_measurements(data, cn0_bins, cfg.LEO_NOISE_SEED[split], split_orbits(split))
     print(f'LEO orbits and measurements: {time.time() - start:.1f} s')
     return gnss, leo, range_errors
@@ -513,8 +501,7 @@ def prepare_measurements(split, gnss, leo, range_errors):
 
     The variance is the same for every filter orbit: that of LEO_TRAIN_ORBIT on the training dataset (A25, A26).
     """
-    end = len(statistics_epochs(split, len(gnss)))
-    variance = orbit_error_variance({name: np.concatenate(errors[:end]) for name, errors in range_errors.items()}, split)
+    variance = orbit_error_variance({name: np.concatenate(errors) for name, errors in range_errors.items()}, split)
     measurements = {}
     for name, epochs in leo.items():
         for meas in epochs:

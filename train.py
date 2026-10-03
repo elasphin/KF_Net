@@ -2,6 +2,10 @@
 
     python train.py  ->  outputs/masked_cla_network.pt (model after the last epoch),
                          outputs/training_history.json, outputs/training_info.json
+    python train.py --restart   (a new training even if a saved one exists)
+
+An interrupted training continues after its last epoch when train.py runs again with the same
+settings, code and data (training_state.py, outputs/training_state.pt).
 
 Training of exp/paper with one change (branch exp/bptt-kalmannet): back-propagation through time
 as in KalmanNet [14] Sec. III-D instead of the single-step gradient of Eq. (31).
@@ -37,6 +41,7 @@ from data_io.data_cache import load_dataset
 from navigation.ins_filter import STATE_SIZE
 from navigation.masked_cla_network import FIXED_FEATURE_SIZE, MaskedCLANetwork
 from navigation.navigation_filter import run_filter
+import training_state
 
 CHECKPOINT_FILE = cfg.OUTPUT_FOLDER / 'masked_cla_network.pt'
 
@@ -72,6 +77,8 @@ def main():
     torch.manual_seed(cfg.RANDOM_SEED)
     rng = np.random.default_rng(cfg.RANDOM_SEED)
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+    if training_state.finished():
+        return
     start_time = time.time()
     data, orbits = load_dataset('train')
     measurements = orbits[cfg.LEO_TRAIN_ORBIT]
@@ -105,8 +112,9 @@ def main():
     }
     print(json.dumps(info, indent=1))
 
-    history = []
-    for epoch in range(1, cfg.TRAINING_EPOCHS + 1):
+    optimizers = (filter_optimizer, encoder_optimizer)
+    first_epoch, history, info, time_before = training_state.resume(network, optimizers, info, rng)
+    for epoch in range(first_epoch, cfg.TRAINING_EPOCHS + 1):
         length = cfg.SUBTRAJECTORY_LENGTHS[0 if epoch <= cfg.WARMUP_EPOCHS else 1]
         pieces = subtrajectories(last, length)
         order = rng.permutation(len(pieces))                             # shuffled every epoch (V2)
@@ -122,9 +130,11 @@ def main():
         torch.save({'state_dict': network.state_dict(), 'max_measurements': max_measurements,     # model after the
                     'leo_train_orbit': cfg.LEO_TRAIN_ORBIT}, CHECKPOINT_FILE)                      # last epoch
         info.update(epochs_run=epoch, final_train_loss=train['loss'],
-                    final_train_position_rmse_m=train['position_rmse_m'], training_time_s=time.time() - start_time)
+                    final_train_position_rmse_m=train['position_rmse_m'],
+                    training_time_s=time_before + time.time() - start_time)
         (cfg.OUTPUT_FOLDER / 'training_history.json').write_text(json.dumps(history, indent=1))
         (cfg.OUTPUT_FOLDER / 'training_info.json').write_text(json.dumps(info, indent=1))
+        training_state.save(epoch, network, optimizers, history, info, rng)
 
 
 if __name__ == '__main__':

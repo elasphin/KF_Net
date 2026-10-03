@@ -21,6 +21,9 @@ no early stopping), single-step gradient of Eq. (31) (filter and LSTM state deta
 optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
 gain scale; the model after the last epoch is tested. Every other `exp/...` branch is `exp/paper` with one change.
 
+This branch, `exp/grad-clip`: the gradient norm of the updated parameters is clipped to `GRADIENT_CLIP_NORM` = 1
+before each Adam step (as in KalmanNet4SensorFusion; docs/ASSUMPTIONS.md A22).
+
 ## Files
 
 | File | Content |

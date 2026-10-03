@@ -3,7 +3,8 @@
     python train.py  ->  outputs/masked_cla_network.pt (model after the last epoch),
                          outputs/training_history.json, outputs/training_info.json
 
-Training exactly as in the paper (branch exp/paper), nothing added:
+Training of exp/paper with one change (branch exp/grad-clip): the gradient norm is clipped to
+settings.GRADIENT_CLIP_NORM before each Adam step (as KalmanNet4SensorFusion).
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
 averaged over the epochs and the three components (MSE, Table III) plus
@@ -14,7 +15,7 @@ Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
 epoch the filter part theta (LSTM, attention, FC) is updated with the encoder
 psi (masked CNN) frozen, then psi is updated with theta frozen; one Adam step
 each (A15). The whole training dataset trains the network (paper Sec. III); there
-is no validation, early stopping, gradient clipping or gain scale, and the model
+is no validation, early stopping or gain scale, and the model
 after the last epoch is tested. The filter uses the LEO orbit settings.LEO_TRAIN_ORBIT
 (A26; the true orbit by default).
 """
@@ -39,6 +40,7 @@ def training_step(network, optimizer, parameters, data, measurements):
     optimizer.zero_grad()
     result = run_filter(data, measurements, network, fault_detection=False, training=True)
     (cfg.L2_WEIGHT * sum(torch.sum(p ** 2) for p in parameters)).backward()          # gamma ||Theta||^2, Eq. (32)
+    torch.nn.utils.clip_grad_norm_(parameters, cfg.GRADIENT_CLIP_NORM)                # A22
     optimizer.step()
     return result
 
@@ -62,7 +64,7 @@ def main():
         'experiment': cfg.EXPERIMENT, 'dataset': data.name, 'leo_train_orbit': cfg.LEO_TRAIN_ORBIT,
         'training_samples': len(data.fusion_times) - 1,
         'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS, 'l2_weight': cfg.L2_WEIGHT,
-        'backprop_window': cfg.BACKPROP_WINDOW, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
+        'backprop_window': cfg.BACKPROP_WINDOW, 'gradient_clip_norm': cfg.GRADIENT_CLIP_NORM, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
         'max_measurements': max_measurements, 'input_size': FIXED_FEATURE_SIZE + 2 * max_measurements,
         'network': f'Conv1D {cfg.CONV_FILTERS}x{cfg.CONV_KERNEL_SIZE} -> max-pool {cfg.POOL_KERNEL_SIZE} -> '
                    f'LSTM {cfg.LSTM_LAYERS}x{cfg.LSTM_UNITS} (dropout {cfg.LSTM_DROPOUT}) -> attention -> '

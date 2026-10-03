@@ -49,7 +49,7 @@ def get_folders() -> tuple[Path, Path]:
 DATASET_FOLDER, OUTPUT_ROOT = get_folders()
 # Training setup of this branch (exp/<EXPERIMENT>): its outputs and its data cache go to OUTPUT_ROOT/EXPERIMENT,
 # so the runs of the experiment branches do not overwrite each other.
-EXPERIMENT = 'paper'
+EXPERIMENT = 'grad-clip'            # exp/paper with gradient clipping
 OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
@@ -125,6 +125,7 @@ LEARNING_RATE = 0.01               # Adam                                       
 TRAINING_EPOCHS = 480              # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
 L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                            [choice A14]
 BACKPROP_WINDOW = 1                # single-step gradient of Eq. (31): state and LSTM state detached every epoch [paper Eq. (31)]
+GRADIENT_CLIP_NORM = 1.0           # max gradient norm before each Adam step (KalmanNet4SensorFusion) [choice A22]
 
 # --- Fault detection and integrity (paper Sec. II-D, Fig. 20) ----------------
 FALSE_ALARM_PROBABILITY = 1e-3     # alpha of the chi-square test                 [ref 33]

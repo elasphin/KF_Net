@@ -32,8 +32,8 @@ GitHub → `elasphin/KF_Net`, any branch → `run_experiments.ipynb` (on Kaggle:
 Internet on). Choose `BRANCH` and `MODE` in its first cell and run all cells: it clones the branch, sets the data and
 epochs of the mode (`quick`: 1500 / 600 fusion epochs and 3 epochs, to check that a branch runs; `screening`:
 3000 / 1000 and 100 epochs, the same for all branches, to compare them; `full`: all data and 480 epochs, as the
-paper), runs `train.py`, `test.py` and `show_results.py` (`lr_sweep.py` for `exp/lr-sweep`) and compares every
-experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<experiment>`.
+paper), runs `train.py`, `test.py` and `show_results.py` (for `exp/lr-sweep` with the learning rate `LEARNING_RATE` of its
+first cell, one rate per run) and compares every experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<experiment>`.
 
 - **Resume** (`train.py`): after every epoch `train.py` keeps the whole training state in
   `training_state.pt`. If a session ends, running it again (all cells of the notebook) continues after the last

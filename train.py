@@ -2,6 +2,11 @@
 
     python train.py  ->  outputs/masked_cla_network.pt (best validation model),
                          outputs/training_history.json, outputs/training_info.json
+    python train.py --restart   (a new training even if a saved one exists)
+
+An interrupted training continues after its last epoch when train.py runs again with the same
+settings, code and data (train.py, outputs/training_state.pt); one ended by early
+stopping is done.
 
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
@@ -13,19 +18,117 @@ psi (masked CNN) frozen, then psi is updated with theta frozen; one Adam step
 each (A15), gradient norm clipped to 1 (A22). The first 80 % of the training
 dataset trains the network, the last 20 % validates it (A21). The filter uses
 the LEO orbit settings.LEO_TRAIN_ORBIT (A26; the true orbit by default).
+
+Resume an interrupted training (train.py), e.g. after the end of a Colab or Kaggle session.
+
+After every epoch train.py keeps the whole training state in OUTPUT_FOLDER/training_state.pt: network,
+optimizers, random generators, history, info and a fingerprint of everything the training depends on
+(settings, training code, data cache key). Running train.py again continues after the last saved epoch
+if the fingerprint is the same, so the result equals that of an uninterrupted run; otherwise (settings,
+code or data changed) a new training starts. TRAINING_EPOCHS is not in the fingerprint: raising it
+continues a training that ran all its epochs (not one ended by early stopping).
+python train.py --restart always starts a new training.
 """
+import functools
+import hashlib
 import json
+import sys
 import time
 
 import numpy as np
 import torch
 
 import settings as cfg
-from data_io.data_cache import load_dataset, training_split
-from navigation.ins_filter import STATE_SIZE
-from navigation.masked_cla_network import FIXED_FEATURE_SIZE, MaskedCLANetwork
-from navigation.navigation_filter import run_filter
+from dataset import cache_key, load_dataset, training_split
+from navigation import FIXED_FEATURE_SIZE, STATE_SIZE, MaskedCLANetwork, run_filter
 
+
+# ===== Resume of an interrupted training ==============================================================================
+# Not in the fingerprint: the number of epochs, the run-time settings (same results) and the folders
+# (names ending in _FOLDER, OUTPUT_ROOT: the state is in the output folder itself).
+NOT_TRAINING_SETTINGS = {'TRAINING_EPOCHS', 'INS_MECHANIZATION', 'LEO_FORCE_MODEL', 'DATA_CACHE', 'OUTPUT_ROOT'}
+TRAINING_CODE = ('train.py', 'navigation.py')
+
+
+def training_state_file():
+    return cfg.OUTPUT_FOLDER / 'training_state.pt'
+
+
+def training_data_key():
+    return cache_key('train')
+
+
+@functools.cache
+def training_fingerprint():
+    """Hash of the settings, the training code and the training data (dataset key)."""
+    digest = hashlib.sha256(training_data_key().encode())
+    for name, value in sorted(vars(cfg).items()):
+        if name.isupper() and name not in NOT_TRAINING_SETTINGS and not name.endswith('_FOLDER'):
+            digest.update(f'{name}={value!r}\n'.encode())
+    for name in TRAINING_CODE:
+        digest.update((cfg.PROJECT_FOLDER / name).read_bytes())
+    return digest.hexdigest()[:16]
+
+
+@functools.cache
+def saved_training_state():
+    """The saved state of the same settings, code and data, or None (none, other fingerprint, --restart);
+    read once, at the start of train.py."""
+    path = training_state_file()
+    if '--restart' in sys.argv[1:] or not path.exists():
+        return None
+    state = torch.load(path)
+    if state['fingerprint'] != training_fingerprint():
+        print(f'{path} is from other settings, code or data: new training')
+        return None
+    return state
+
+
+def training_finished():
+    """True (with a message) if the saved training already has TRAINING_EPOCHS epochs or stopped early."""
+    state = saved_training_state()
+    if state is None or state['epoch'] < cfg.TRAINING_EPOCHS and not state.get('stopped', False):
+        return False
+    print(f"training already done ({state['epoch']} epochs{', early stopping' if state.get('stopped') else ''}, "
+          f"{training_state_file()}); python train.py --restart trains again")
+    return True
+
+
+def resume_training(network, optimizers, info, rng=None):
+    """Restore the saved state into network, optimizers and random generators (torch and the NumPy rng).
+
+    info: the info of this run (settings); the saved one adds what the training wrote (epochs_run, ...).
+    Returns (first epoch to run, history, info, training time already spent [s]); for a new training
+    (1, [], info, 0.0).
+    """
+    state = saved_training_state()
+    if state is None:
+        return 1, [], info, 0.0
+    network.load_state_dict(state['network'])
+    for optimizer, optimizer_state in zip(optimizers, state['optimizers']):
+        optimizer.load_state_dict(optimizer_state)
+    torch.set_rng_state(state['torch_rng'])
+    if rng is not None:
+        rng.bit_generator.state = state['numpy_rng']
+    saved = state['info']
+    info = {**saved, **info, 'resumed_after_epochs': saved.get('resumed_after_epochs', []) + [state['epoch']]}
+    print(f"resumed after epoch {state['epoch']} ({training_state_file()})")
+    return state['epoch'] + 1, state['history'], info, saved['training_time_s']
+
+
+def save_training_state(epoch, network, optimizers, history, info, rng=None, stopped=False):
+    """Keep the state after 'epoch' (written to a temporary file first, so an interruption cannot spoil it);
+    stopped: the training ended by early stopping."""
+    path = training_state_file()
+    temporary = path.with_suffix('.tmp')
+    torch.save({'fingerprint': training_fingerprint(), 'epoch': epoch, 'network': network.state_dict(),
+                'optimizers': [optimizer.state_dict() for optimizer in optimizers],
+                'torch_rng': torch.get_rng_state(), 'numpy_rng': None if rng is None else rng.bit_generator.state,
+                'history': history, 'info': info, 'stopped': stopped}, temporary)
+    temporary.replace(path)
+
+
+# ===== Training =======================================================================================================
 CHECKPOINT_FILE = cfg.OUTPUT_FOLDER / 'masked_cla_network.pt'
 
 
@@ -44,6 +147,8 @@ def training_step(network, optimizer, parameters, data, measurements, last):
 def main():
     torch.manual_seed(cfg.RANDOM_SEED)
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+    if training_finished():
+        return
     start_time = time.time()
     data, orbits = load_dataset('train')
     measurements = orbits[cfg.LEO_TRAIN_ORBIT]
@@ -61,7 +166,7 @@ def main():
     filter_optimizer = torch.optim.Adam(filter_part, lr=cfg.LEARNING_RATE)
 
     info = {
-        'dataset': data.name, 'leo_train_orbit': cfg.LEO_TRAIN_ORBIT,
+        'experiment': cfg.EXPERIMENT, 'dataset': data.name, 'leo_train_orbit': cfg.LEO_TRAIN_ORBIT,
         'training_samples': split, 'validation_samples': last - split,
         'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS,
         'early_stopping_patience': cfg.EARLY_STOPPING_PATIENCE, 'l2_weight': cfg.L2_WEIGHT,
@@ -75,8 +180,12 @@ def main():
     }
     print(json.dumps(info, indent=1))
 
-    history, best_loss, epochs_without_improvement = [], np.inf, 0
-    for epoch in range(1, cfg.TRAINING_EPOCHS + 1):
+    optimizers = (filter_optimizer, encoder_optimizer)
+    first_epoch, history, info, time_before = resume_training(network, optimizers, info)
+    losses = [h['validation_loss'] for h in history]                 # early stopping state of a resumed training
+    best_loss = min(losses, default=np.inf)
+    epochs_without_improvement = len(losses) - 1 - losses.index(best_loss) if losses else 0
+    for epoch in range(first_epoch, cfg.TRAINING_EPOCHS + 1):
         training_step(network, filter_optimizer, filter_part, data, measurements, split)   # theta, psi frozen
         train = training_step(network, encoder_optimizer, encoder, data, measurements, split)  # psi, theta frozen
         validation = run_filter(data, measurements, network, split, last, fault_detection=False)
@@ -95,10 +204,14 @@ def main():
                         'leo_train_orbit': cfg.LEO_TRAIN_ORBIT}, CHECKPOINT_FILE)
         else:
             epochs_without_improvement += 1
-        info.update(epochs_run=epoch, training_time_s=time.time() - start_time)
+        stopped = epochs_without_improvement >= cfg.EARLY_STOPPING_PATIENCE
+        info.update(epochs_run=epoch, final_train_loss=train['loss'],
+                    final_train_position_rmse_m=train['position_rmse_m'],
+                    training_time_s=time_before + time.time() - start_time)
         (cfg.OUTPUT_FOLDER / 'training_history.json').write_text(json.dumps(history, indent=1))
         (cfg.OUTPUT_FOLDER / 'training_info.json').write_text(json.dumps(info, indent=1))
-        if epochs_without_improvement >= cfg.EARLY_STOPPING_PATIENCE:
+        save_training_state(epoch, network, optimizers, history, info, stopped=stopped)
+        if stopped:
             print(f'early stopping: no better validation loss for {cfg.EARLY_STOPPING_PATIENCE} epochs')
             break
 

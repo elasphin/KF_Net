@@ -46,7 +46,11 @@ def get_folders() -> tuple[Path, Path]:
     return LOCAL_FOLDER, LOCAL_OUTPUT_FOLDER
 
 
-DATASET_FOLDER, OUTPUT_FOLDER = get_folders()
+DATASET_FOLDER, OUTPUT_ROOT = get_folders()
+# Training setup of this branch: main, or exp/<EXPERIMENT> (the training experiment branches); its outputs and its
+# data cache go to OUTPUT_ROOT/EXPERIMENT, so the runs of the branches do not overwrite each other.
+EXPERIMENT = 'main'
+OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
 KAGGLE_DATASET = 'elasphin/mknet-project'                      # [paper Sec. III]
@@ -130,7 +134,7 @@ VERTICAL_PL_FACTOR = 5.33          # K_V                                        
 ALERT_LIMIT = 30.0                 # m, Stanford diagrams                         [paper Fig. 20]
 
 # --- Run time only (the results do not change; README.md "Run time") --------
-INS_MECHANIZATION = 'numba'        # 'python' (ins_filter.mechanize loop) or 'numba' (same arithmetic, compiled)
+INS_MECHANIZATION = 'numba'        # 'python' (navigation.mechanize loop) or 'numba' (same arithmetic, compiled)
 LEO_FORCE_MODEL = 'numba'          # 'python' (leo_pseudorange.equations_of_motion) or 'numba' (same, compiled)
 DATA_CACHE = True                  # keep the read dataset and the simulated measurements in OUTPUT_FOLDER/cache
 

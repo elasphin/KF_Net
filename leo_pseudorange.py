@@ -42,7 +42,7 @@ Measurements:
   leo_orbit_error_train.json (zero for the reference orbit), used in R of every
   test orbit.
 The *_numba functions are Numba-compiled copies of the Python function that follows each of them
-(setting LEO_FORCE_MODEL = 'numba', see earth_models.py).
+(setting LEO_FORCE_MODEL = 'numba', see measurements.py).
 """
 import json
 from math import factorial
@@ -54,11 +54,9 @@ from scipy.integrate import solve_ivp
 from sgp4.api import Satrec
 
 import settings as cfg
-from measurements.earth_models import (EARTH_ROTATION_VECTOR, GPS_UTC_LEAP_SECONDS, SPEED_OF_LIGHT,
-                                       earth_rotation_angle, earth_rotation_angle_numba, elevation_azimuth,
-                                       multipath_variance, norm, power, receiver_noise_std)
-from measurements.gnss_measurements import EpochMeasurements, geometric_range
-
+from measurements import (EARTH_ROTATION_VECTOR, GPS_UTC_LEAP_SECONDS, SPEED_OF_LIGHT, EpochMeasurements,
+                          earth_rotation_angle, earth_rotation_angle_numba, elevation_azimuth, geometric_range,
+                          multipath_variance, norm, power, receiver_noise_std)
 GPS_EPOCH_JULIAN_DATE = 2444244.5               # 1980-01-06 0h
 GRAVITY_FILE = Path(__file__).resolve().parent / 'egm96_degree20.txt'
 EGM96_GM, EGM96_RADIUS = 3.986004415e14, 6378136.3
@@ -309,7 +307,7 @@ def network_orbit(history, times):
     history: TLEs of the satellite (sgp4 Satrec, ascending epoch) published up to the
     predictor TLE (history[-1]), never the reference TLE. Returns ECEF position and
     velocity [m, m/s] at the GPST times, shape (len(times), 3) each. If the code is put
-    in another file, add that file to data_cache.DATA_CODE so the cache is renewed.
+    in another file, add that file to dataset.DATA_CODE so the cache is renewed.
     """
     raise NotImplementedError("LEO orbit 'network' is not written yet: leo_pseudorange.network_orbit")
 

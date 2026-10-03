@@ -6,7 +6,7 @@
 Everything is compared with the post-processed truth of the same dataset; the expected values are printed with
 each result. Sections:
   1. IMR header (delta or rate samples, GPS or UTC time tags, time tag bias) and the IMU sample interval
-  2. first rows of both truth files with their column numbers (the columns read by read_dataset.truth_row)
+  2. first rows of both truth files with their column numbers (the columns read by dataset.truth_row)
   3. truth velocity vs the time derivative of the truth position; antenna truth vs IMU truth + C lever arm
   4. INS over each 1 s fusion interval from the truth, for several IMU time offsets (attitude convention,
      mounting, IMU scale and time tags: a wrong one gives a large velocity error or a non-zero best offset)
@@ -24,14 +24,10 @@ import numpy as np
 import torch
 
 import settings as cfg
-from data_io.data_cache import load_dataset, training_split
-from data_io.read_dataset import IMR_HEADER_SIZE, find_dataset_folder, read_imu, read_rover_info
-from measurements.earth_models import (EARTH_ROTATION_VECTOR, ecef_to_llh, ecef_to_ned_matrix, gravity,
-                                       rotation_matrix_to_vector, skew)
-from measurements.gnss_measurements import predict_pseudoranges
-from navigation.ins_filter import propagate_ins, truth_state
-from navigation.navigation_filter import run_filter
-
+from dataset import IMR_HEADER_SIZE, find_dataset_folder, load_dataset, read_imu, read_rover_info, training_split
+from measurements import (EARTH_ROTATION_VECTOR, ecef_to_llh, ecef_to_ned_matrix, gravity, predict_pseudoranges,
+                          rotation_matrix_to_vector, skew)
+from navigation import propagate_ins, run_filter, truth_state
 IMR_FIELDS = ('header', 'byte_order', 'version', 'delta_theta', 'delta_velocity', 'rate_hz', 'gyro_scale',
               'accel_scale', 'utc_or_gps_time', 'receiver_or_corrected_time', 'time_tag_bias', 'imu_name',
               'reserved', 'reserved', 'reserved', 'program', 'creation_time', 'creation_time', 'creation_time',
@@ -60,7 +56,7 @@ def imr_header(folder, imu_type):
                  'utc_or_gps_time', 'receiver_or_corrected_time', 'time_tag_bias', 'imu_name'):
         value = fields[name]
         print(f"   {name:28s} {value.rstrip(bytes(1)).decode(errors='replace') if isinstance(value, bytes) else value}")
-    print('   read_dataset.read_imu assumes delta_theta = delta_velocity = 1 (increments, multiplied by the rate),'
+    print('   dataset.read_imu assumes delta_theta = delta_velocity = 1 (increments, multiplied by the rate),'
           ' utc_or_gps_time = 2 (GPS; 1 = UTC would be 18 s off) and time_tag_bias in ms')
     if fields['delta_theta'] != 1 or fields['delta_velocity'] != 1:
         print('   !!! samples are not increments: read_imu multiplies them by the rate')
@@ -69,7 +65,7 @@ def imr_header(folder, imu_type):
 
 
 def truth_columns(folder, imu_type):
-    print('\n2. Truth files (read_dataset.truth_row reads: 0 week, 1 seconds, 9:12 ECEF position, '
+    print('\n2. Truth files (dataset.truth_row reads: 0 week, 1 seconds, 9:12 ECEF position, '
           '15:18 ECEF velocity, 21:24 heading/pitch/roll)')
     print(f"   files: {', '.join(p.name for p in sorted(folder.glob('*GroundTruth.txt')))}")
     with (folder / f'{imu_type}_GroundTruth.txt').open(errors='replace') as f:
@@ -201,7 +197,7 @@ def baselines(data, measurements):
     network = None
     checkpoint_file = cfg.OUTPUT_FOLDER / 'masked_cla_network.pt'
     if checkpoint_file.exists():
-        from navigation.masked_cla_network import MaskedCLANetwork
+        from navigation import MaskedCLANetwork
         checkpoint = torch.load(checkpoint_file)
         network = MaskedCLANetwork(checkpoint['max_measurements'])
         network.load_state_dict(checkpoint['state_dict'])

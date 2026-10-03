@@ -8,27 +8,27 @@
 
 | بخش مقاله | فایل / تابع |
 |---|---|
-| Eq. (1) مدل شبه‌فاصله‌ی LEO (بدون ساعت و تأخیر جوی، A4 و A24) | `leo_pseudorange.simulate_leo_measurements`, `gnss_measurements.predict_pseudoranges` |
-| Eq. (3) واریانس = URA + iono + tropo + MP/NLOS + receiver، با فرمول‌های [35] | `earth_models.pseudorange_variance` |
-| Eq. (4) مدل MP/NLOS برحسب C/N0 و ارتفاع (goGPS [37]) — کد واریانس goGPS را حساب می‌کند که **وارون** فرمول چاپ‌شده‌ی Eq. (4) است: فرمول چاپ‌شده وزن است (sin²e در صورت) و با کاهش C/N0 واریانس را کم می‌کند و در CN0 = s1 با شاخه‌ی دوم پیوسته نیست | `earth_models.multipath_variance` |
+| Eq. (1) مدل شبه‌فاصله‌ی LEO (بدون ساعت و تأخیر جوی، A4 و A24) | `leo_pseudorange.simulate_leo_measurements`, `measurements.predict_pseudoranges` |
+| Eq. (3) واریانس = URA + iono + tropo + MP/NLOS + receiver، با فرمول‌های [35] | `measurements.pseudorange_variance` |
+| Eq. (4) مدل MP/NLOS برحسب C/N0 و ارتفاع (goGPS [37]) — کد واریانس goGPS را حساب می‌کند که **وارون** فرمول چاپ‌شده‌ی Eq. (4) است: فرمول چاپ‌شده وزن است (sin²e در صورت) و با کاهش C/N0 واریانس را کم می‌کند و در CN0 = s1 با شاخه‌ی دوم پیوسته نیست | `measurements.multipath_variance` |
 | Eq. (5) تکرار زمان ارسال سیگنال LEO | `leo_pseudorange.transmit_positions` |
 | Table II: GPS + BDS-3، مدل خطای IMU (منظومه‌ی LEO جای Walker + قطبی را گرفته، A1) | `settings.py` |
-| Eq. (6)-(7) حالت ۱۵تایی [δp δv δθ b_a b_g] در ECEF، ماتریس F از مرجع [38] | `ins_filter.error_matrix` |
-| Eq. (8) جبران بایاس IMU با بایاس‌های تخمینی | `ins_filter.mechanize` |
-| Eq. (9) بازوی اهرمی IMU–آنتن | `ins_filter.measurement_model` |
-| Eq. (10)-(15) ویژگی‌های ورودی شبکه | `masked_cla_network.build_network_input` |
-| Eq. (16)-(17), (21) صفرگذاری تا N_max و ماتریس ماسک | `masked_cla_network.build_network_input`, `MaskedCLANetwork.forward` |
+| Eq. (6)-(7) حالت ۱۵تایی [δp δv δθ b_a b_g] در ECEF، ماتریس F از مرجع [38] | `navigation.error_matrix` |
+| Eq. (8) جبران بایاس IMU با بایاس‌های تخمینی | `navigation.mechanize` |
+| Eq. (9) بازوی اهرمی IMU–آنتن | `navigation.measurement_model` |
+| Eq. (10)-(15) ویژگی‌های ورودی شبکه | `navigation.build_network_input` |
+| Eq. (16)-(17), (21) صفرگذاری تا N_max و ماتریس ماسک | `navigation.build_network_input`, `MaskedCLANetwork.forward` |
 | Eq. (22)-(23) CNN ماسک‌دار با نرمال‌سازی تعداد نمونه‌ی معتبر | `MaskedCLANetwork.forward` |
 | Eq. (24)-(25) LSTM ماسک‌دار (نگه‌داشتن حالت در گام‌های ماسک‌شده) | `MaskedCLANetwork.forward` |
 | Eq. (26)-(29) attention ماسک‌دار | `MaskedCLANetwork.forward` |
 | FC ماسک‌دار: ستون‌های j ≥ N_k بهره صفر | `MaskedCLANetwork.forward` |
-| Table III: Conv1D ۲۴ فیلتر، کرنل ۳، stride ۱، ReLU؛ LSTM ۶۴ واحد، ۵ لایه، dropout ۰٫۲؛ MSE؛ Adam؛ lr = 0.01 | `settings.py`, `masked_cla_network.py`, `train.py` |
-| Eq. (30), (32) تابع هزینه با داده‌ی مرجع پس‌پردازش + γ‖Θ‖² | `navigation_filter.run_filter`, `train.training_step` |
+| Table III: Conv1D ۲۴ فیلتر، کرنل ۳، stride ۱، ReLU؛ LSTM ۶۴ واحد، ۵ لایه، dropout ۰٫۲؛ MSE؛ Adam؛ lr = 0.01 | `settings.py`, `navigation.py`, `train.py` |
+| Eq. (30), (32) تابع هزینه با داده‌ی مرجع پس‌پردازش + γ‖Θ‖² | `navigation.run_filter`, `train.training_step` |
 | Sec. II-B: بهینه‌سازی متناوب پارامترها ([15] Algorithm 2) | `train.training_step`, `train.main` |
-| Sec. II-D: FDE روی نوآوری پیش‌بینی INS، قبل از اعمال بهره‌ی شبکه | `navigation_filter.run_filter` |
-| Eq. (33) آزمون کای‌دو با Q = HPHᵀ + R و α = 10⁻³ ([33]) | `navigation_filter.find_faults` |
-| شناسایی خطا با آماره‌ی T_i مرجع [33]؛ ردیف‌هایی که c_i موازی دارند (دو ماهواره‌ی تنهای یک منظومه) یک فرض [33] هستند و هر دو نام برده می‌شوند (مثلاً `C23/C30`) | `navigation_filter.find_faults` |
-| Eq. (34) تطبیق DIA: x_i = x₀ − L_i ν ([33] Eq. 39)؛ P_i = کوواریانس Joseph با بهره‌ی K − L_i (برای بهره‌ی EKF همان P₀ + L_i Q L_iᵀ، و برای بهره‌ی شبکه هم درست)؛ C_i ماتریس ستون‌های همه‌ی خطاهای شناسایی‌شده (A27) | `navigation_filter.adapt_to_faults` |
+| Sec. II-D: FDE روی نوآوری پیش‌بینی INS، قبل از اعمال بهره‌ی شبکه | `navigation.run_filter` |
+| Eq. (33) آزمون کای‌دو با Q = HPHᵀ + R و α = 10⁻³ ([33]) | `navigation.find_faults` |
+| شناسایی خطا با آماره‌ی T_i مرجع [33]؛ ردیف‌هایی که c_i موازی دارند (دو ماهواره‌ی تنهای یک منظومه) یک فرض [33] هستند و هر دو نام برده می‌شوند (مثلاً `C23/C30`) | `navigation.find_faults` |
+| Eq. (34) تطبیق DIA: x_i = x₀ − L_i ν ([33] Eq. 39)؛ P_i = کوواریانس Joseph با بهره‌ی K − L_i (برای بهره‌ی EKF همان P₀ + L_i Q L_iᵀ، و برای بهره‌ی شبکه هم درست)؛ C_i ماتریس ستون‌های همه‌ی خطاهای شناسایی‌شده (A27) | `navigation.adapt_to_faults` |
 | Table IV (RMSE شمال/شرق/پایین/سه‌بعدی و درصد بهبود هر محور) | `test.summarize`, `show_results.py` |
 | Fig. 18 (مسیر دوبعدی و خطای شمال/شرق/پایین در زمان)، Fig. 19 (CDF هر محور) | `show_results.py` |
 | Fig. 20 (نمودار Stanford افقی و عمودی هر روش جدا، با چگالی نقاط و درصد هر پنج ناحیه، AL = 30 m) | `test.summarize`, `show_results.py` |
@@ -49,7 +49,7 @@
   (بعداً با انتخاب شما LEO دوباره ماهواره‌های واقعی SOP از TLE شد، به روش استاندارد A1؛ مدل MP همان A3 ماند.)
 - ماسک ارتفاع ۵ درجه برای GNSS → حذف (فقط ارتفاع مثبت).
 - کش‌کردن داده‌ی LEO، اثرانگشت فایل‌ها، ژاکوبین reset وضعیت، INS مشتق‌پذیر در PyTorch → حذف برای سادگی.
-  (بعداً با انتخاب شما کش داده‌ها برای کاهش زمان اجرا برگشت: `data_cache.py` و `DATA_CACHE` در `settings.py`؛ روی نتایج اثری ندارد.)
+  (بعداً با انتخاب شما کش داده‌ها برای کاهش زمان اجرا برگشت: `dataset.py` و `DATA_CACHE` در `settings.py`؛ روی نتایج اثری ندارد.)
 - وابستگی به `IMUErrorModel.txt` → حذف؛ نویز IMU از Table II.
 
 ## ۳. فرض‌هایی که قابل حذف نیستند (مقاله مقدارشان را نداده) — لطفاً انتخاب کنید
@@ -266,7 +266,7 @@ Kassas & Saroufim, *LEO PNT Frameworks for Non-Cooperative Satellites with Poorl
 - Data01 به دنباله‌های پشت‌سرهم `SEQUENCE_LENGTH` = 100 اپوکی تقسیم می‌شود (train_seq_len)؛ هر دنباله از حالت مرجع و با حالت LSTM
   تازه شروع می‌شود، ترتیبشان در هر epoch تصادفی است و همه با هم (lockstep) اجرا می‌شوند (batch_size آن‌ها ۲۵۶ از ~۹۰ دنباله بیشتر است).
 - پس از هر پنجره‌ی `TBPTT_WINDOW` = 10 اپوکی (slide_win_size) یک گام Adam روی میانگین loss پنجره در همه‌ی دنباله‌ها برداشته
-  می‌شود و فیلترها ادامه می‌دهند (`navigation_filter.filter_steps` در پایان هر پنجره مکث می‌کند).
+  می‌شود و فیلترها ادامه می‌دهند (`navigation.filter_steps` در پایان هر پنجره مکث می‌کند).
 - حالت فیلتر در هر اپوک detach می‌شود (خاصیت مارکوف مرتبه‌ی اول، مانند مدل آن‌ها) و حالت LSTM هر `LSTM_DETACH_STEP` = 5 اپوک
   (detach_step) و در پایان هر پنجره.
 - مقادیر L/W/d انتخاب شما (۱۰۰/۱۰/۵) است؛ config «origin» آن‌ها ۵۰/۴/۲ است. lr، γ، بدون برش گرادیان و تناوب [15] همان `exp/paper`

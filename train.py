@@ -5,7 +5,7 @@
     python train.py --restart   (a new training even if a saved one exists)
 
 An interrupted training continues after its last epoch when train.py runs again with the same
-settings, code and data (training_state.py, outputs/training_state.pt).
+settings, code and data (train.py, outputs/training_state.pt).
 
 Training of exp/paper with one change (branch exp/tbptt-sensorfusion): the truncated back-propagation
 through time of KalmanNet4SensorFusion (Song et al., IEEE SPL 2024; fusion_trainer.py) instead of one
@@ -15,7 +15,7 @@ sequences of a batch (TBPTT_BATCH_SIZE, None = all) run in lockstep, and after e
 TBPTT_WINDOW epochs one Adam step follows on the mean window loss of the batch, while the filters go
 on. The filter state is detached every epoch (first-order Markov, BACKPROP_WINDOW = 1, so the
 gradient of each epoch is that of Eq. (31)), the LSTM state every LSTM_DETACH_STEP epochs and at the
-end of every window (navigation_filter.filter_steps).
+end of every window (navigation.filter_steps).
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
 averaged over the epochs and the three components (MSE, Table III) plus
@@ -29,20 +29,114 @@ is no validation, early stopping, gradient clipping or gain scale, and the model
 after the last epoch is tested. The training loss and RMSE are those of the sequences (each starts from
 the truth). The filter uses the LEO orbit settings.LEO_TRAIN_ORBIT
 (A26; the true orbit by default).
+
+Resume an interrupted training (train.py), e.g. after the end of a Colab or Kaggle session.
+
+After every epoch train.py keeps the whole training state in OUTPUT_FOLDER/training_state.pt: network,
+optimizers, random generators, history, info and a fingerprint of everything the training depends on
+(settings, training code, data cache key). Running train.py again continues after the last saved epoch
+if the fingerprint is the same, so the result equals that of an uninterrupted run; otherwise (settings,
+code or data changed) a new training starts. TRAINING_EPOCHS is not in the fingerprint: raising it
+continues a finished training. python train.py --restart always starts a new training.
 """
+import functools
+import hashlib
 import json
+import sys
 import time
 
 import numpy as np
 import torch
 
 import settings as cfg
-from data_io.data_cache import load_dataset
-from navigation.ins_filter import STATE_SIZE
-from navigation.masked_cla_network import FIXED_FEATURE_SIZE, MaskedCLANetwork
-from navigation.navigation_filter import filter_steps, run_filter
-import training_state
+from dataset import cache_key, load_dataset
+from navigation import FIXED_FEATURE_SIZE, STATE_SIZE, MaskedCLANetwork, filter_steps, run_filter
 
+
+# ===== Resume of an interrupted training ==============================================================================
+# Not in the fingerprint: the number of epochs, the run-time settings (same results) and the folders
+# (names ending in _FOLDER, OUTPUT_ROOT: the state is in the output folder itself).
+NOT_TRAINING_SETTINGS = {'TRAINING_EPOCHS', 'INS_MECHANIZATION', 'LEO_FORCE_MODEL', 'DATA_CACHE', 'OUTPUT_ROOT'}
+TRAINING_CODE = ('train.py', 'navigation.py')
+
+
+def training_state_file():
+    return cfg.OUTPUT_FOLDER / 'training_state.pt'
+
+
+def training_data_key():
+    return cache_key('train')
+
+
+@functools.cache
+def training_fingerprint():
+    """Hash of the settings, the training code and the training data (dataset key)."""
+    digest = hashlib.sha256(training_data_key().encode())
+    for name, value in sorted(vars(cfg).items()):
+        if name.isupper() and name not in NOT_TRAINING_SETTINGS and not name.endswith('_FOLDER'):
+            digest.update(f'{name}={value!r}\n'.encode())
+    for name in TRAINING_CODE:
+        digest.update((cfg.PROJECT_FOLDER / name).read_bytes())
+    return digest.hexdigest()[:16]
+
+
+@functools.cache
+def saved_training_state():
+    """The saved state of the same settings, code and data, or None (none, other fingerprint, --restart);
+    read once, at the start of train.py."""
+    path = training_state_file()
+    if '--restart' in sys.argv[1:] or not path.exists():
+        return None
+    state = torch.load(path)
+    if state['fingerprint'] != training_fingerprint():
+        print(f'{path} is from other settings, code or data: new training')
+        return None
+    return state
+
+
+def training_finished():
+    """True (with a message) if the saved training already has TRAINING_EPOCHS epochs."""
+    state = saved_training_state()
+    if state is None or state['epoch'] < cfg.TRAINING_EPOCHS:
+        return False
+    print(f"training already done ({state['epoch']} epochs, {training_state_file()}); python train.py --restart trains again")
+    return True
+
+
+def resume_training(network, optimizers, info, rng=None):
+    """Restore the saved state into network, optimizers and random generators (torch and the NumPy rng).
+
+    info: the info of this run (settings); the saved one adds what the training wrote (epochs_run, ...).
+    Returns (first epoch to run, history, info, training time already spent [s]); for a new training
+    (1, [], info, 0.0).
+    """
+    state = saved_training_state()
+    if state is None:
+        return 1, [], info, 0.0
+    network.load_state_dict(state['network'])
+    for optimizer, optimizer_state in zip(optimizers, state['optimizers']):
+        optimizer.load_state_dict(optimizer_state)
+    torch.set_rng_state(state['torch_rng'])
+    if rng is not None:
+        rng.bit_generator.state = state['numpy_rng']
+    saved = state['info']
+    info = {**saved, **info, 'resumed_after_epochs': saved.get('resumed_after_epochs', []) + [state['epoch']]}
+    print(f"resumed after epoch {state['epoch']} ({training_state_file()})")
+    return state['epoch'] + 1, state['history'], info, saved['training_time_s']
+
+
+def save_training_state(epoch, network, optimizers, history, info, rng=None):
+    """Keep the state after 'epoch' (written to a temporary file first, so an interruption cannot spoil it)."""
+    path = training_state_file()
+    temporary = path.with_suffix('.tmp')
+    torch.save({'fingerprint': training_fingerprint(), 'epoch': epoch, 'network': network.state_dict(),
+                'optimizers': [optimizer.state_dict() for optimizer in optimizers],
+                'torch_rng': torch.get_rng_state(), 'numpy_rng': None if rng is None else rng.bit_generator.state,
+                'history': history, 'info': info}, temporary)
+    temporary.replace(path)
+
+
+# ===== Training =======================================================================================================
 CHECKPOINT_FILE = cfg.OUTPUT_FOLDER / 'masked_cla_network.pt'
 
 
@@ -89,7 +183,7 @@ def main():
     torch.manual_seed(cfg.RANDOM_SEED)
     rng = np.random.default_rng(cfg.RANDOM_SEED)
     cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
-    if training_state.finished():
+    if training_finished():
         return
     start_time = time.time()
     data, orbits = load_dataset('train')
@@ -123,7 +217,7 @@ def main():
     print(json.dumps(info, indent=1))
 
     optimizers = (filter_optimizer, encoder_optimizer)
-    first_epoch, history, info, time_before = training_state.resume(network, optimizers, info, rng)
+    first_epoch, history, info, time_before = resume_training(network, optimizers, info, rng)
     for epoch in range(first_epoch, cfg.TRAINING_EPOCHS + 1):
         pieces = sequences(last, cfg.SEQUENCE_LENGTH)
         order = rng.permutation(len(pieces))                             # shuffled every epoch
@@ -142,7 +236,7 @@ def main():
                     training_time_s=time_before + time.time() - start_time)
         (cfg.OUTPUT_FOLDER / 'training_history.json').write_text(json.dumps(history, indent=1))
         (cfg.OUTPUT_FOLDER / 'training_info.json').write_text(json.dumps(info, indent=1))
-        training_state.save(epoch, network, optimizers, history, info, rng)
+        save_training_state(epoch, network, optimizers, history, info, rng)
 
 
 if __name__ == '__main__':

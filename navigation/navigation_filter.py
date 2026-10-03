@@ -20,7 +20,7 @@ from measurements.earth_models import ecef_to_llh, ecef_to_ned_matrix, skew
 from navigation.ins_filter import (STATE_SIZE, apply_correction, classical_gain, error_matrix, initial_covariance,
                                    joseph_covariance, measurement_model, process_noise, propagate_ins,
                                    state_difference, transition_matrix, truth_state)
-from navigation.masked_cla_network import build_network_input
+from navigation.masked_cla_network import build_network_input, network_input_values
 
 PARALLEL_TOLERANCE = 1e-9     # relative: c_i parallel to an identified fault, or already explained by it
 
@@ -102,10 +102,12 @@ def stanford_percentages(error, protection_level):
 
 # --- Filter (paper Fig. 2) ---------------------------------------------------
 def run_filter(data, measurements, network=None, first=0, last=None, fault_detection=True, training=False,
-               max_measurements=None):
+               max_measurements=None, input_samples=None):
     """Filter over fusion epochs first..last, starting from the truth at 'first' (A7).
 
-    network=None: traditional EKF gain, with at most max_measurements rows (A16).
+    network=None: traditional EKF gain, with at most max_measurements rows (A16). With a list input_samples, it
+    appends the network input X_k of every epoch with a measurement as (X_k, present, sat_ids)
+    (masked_cla_network.network_input_values), for the input normalization statistics (exp/input-norm).
     training=True: accumulates the gradient of the Eq. (32) loss (A15). The filter runs in NumPy; the gradient
     follows its linearization: 'link' is the shift of the prior state caused by the earlier corrections
     (a correction at k shifts the prior at k+1 by Phi dx_k), the innovation shifts by -H link, so
@@ -144,13 +146,17 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
             nu, H, R = model.innovation, model.H, model.R
             count = len(nu)
             if network is None:
+                if input_samples is not None:
+                    input_samples.append((*network_input_values(previous, model.measurements.sat_ids,
+                                                                torch.from_numpy(nu), accel, gyro),
+                                          model.measurements.sat_ids))
                 K = classical_gain(P, H, R)
                 dx = K @ nu
             else:
                 with torch.set_grad_enabled(training):
                     innovation = torch.from_numpy(nu) - torch.from_numpy(H) @ shift
                     features, length = build_network_input(previous, model.measurements.sat_ids, innovation, accel,
-                                                           gyro, network.max_measurements)
+                                                           gyro, network.max_measurements, network.input_normalization)
                     gain, hidden = network(features.float(), length, count, hidden)
                     dx_tensor = gain[:, :count].double() @ innovation
                 K, dx = gain.detach().double().numpy()[:, :count], dx_tensor.detach().numpy()
@@ -175,7 +181,7 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
             loss_sum += loss.item()
 
         new_state = apply_correction(state, dx)
-        if network is not None:                        # network input of epoch k+1, paper Eq. (11)-(14)
+        if network is not None or input_samples is not None:   # network input of epoch k+1, paper Eq. (11)-(14)
             with torch.set_grad_enabled(training):
                 after = None if model is None else measurement_model(
                     new_state, model.measurements, data.lever_arm, times[k], data.klobuchar_alpha, data.klobuchar_beta)

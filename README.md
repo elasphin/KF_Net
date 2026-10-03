@@ -21,6 +21,11 @@ no early stopping), single-step gradient of Eq. (31) (filter and LSTM state deta
 optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
 gain scale; the model after the last epoch is tested. Every other `exp/...` branch is `exp/paper` with one change.
 
+This branch, `exp/input-norm`: the network input X_k is normalized, `INPUT_NORMALIZATION` = `'l2'` (each of the six
+feature groups to unit L2 norm, as KalmanNet [14] and KalmanNet4SensorFusion) or `'zscore'` (mean and standard
+deviation per feature from a traditional EKF run on Data01; per system G/C/L for the residuals and innovations). The
+outputs go to `input-norm-l2` or `input-norm-zscore`; the statistics are saved with the model.
+
 ## Files
 
 | File | Content |

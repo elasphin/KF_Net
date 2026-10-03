@@ -9,22 +9,96 @@ from navigation.ins_filter import STATE_SIZE
 FIXED_FEATURE_SIZE = 6 + 2 * STATE_SIZE      # [d_alpha(3), d_w(3), dx_hat(15), dx_tilde(15)] = 36
 
 
-def build_network_input(previous, sat_ids, innovation, accel, gyro, max_measurements):
-    """Paper Eq. (15)-(16): X_k = [d_alpha, d_w, dx_hat, dx_tilde, dy, dy_tilde] followed by zero padding.
+def network_input_values(previous, sat_ids, innovation, accel, gyro):
+    """Paper Eq. (15): X_k = [d_alpha, d_w, dx_hat, dx_tilde, dy, dy_tilde], and which dy exist.
 
     previous: quantities of epoch k-1 ('accel', 'gyro', 'state_residual' Eq. (13),
     'state_innovation' Eq. (12), 'residuals' Eq. (11) as {sat_id: value}).
     A satellite that was not used at k-1 has lagged residual 0 (docs/ASSUMPTIONS.md A12).
     The state and measurement quantities are float64 tensors; in training they carry the gradient of the
     earlier corrections (navigation_filter.run_filter, A15).
-    Returns the padded vector (tensor, length 36 + 2 N_max) and the number of valid entries (mask, Eq. (17)).
+    Returns X_k (tensor, length 36 + 2 N_k) and the boolean mask of the lagged residuals that exist.
     """
     zero = torch.zeros((), dtype=torch.float64)
     lagged_residual = [previous['residuals'].get(s, zero) for s in sat_ids]
     values = torch.cat([torch.from_numpy(accel - previous['accel']), torch.from_numpy(gyro - previous['gyro']),  # Eq. (14)
                         previous['state_residual'], previous['state_innovation'],                            # Eq. (13), (12)
                         torch.stack(lagged_residual), innovation])                                           # Eq. (11), (10)
+    return values, torch.tensor([s in previous['residuals'] for s in sat_ids])
+
+
+def build_network_input(previous, sat_ids, innovation, accel, gyro, max_measurements, normalization=None):
+    """Paper Eq. (15)-(16): X_k, normalized (exp/input-norm), followed by zero padding.
+
+    Returns the padded vector (tensor, length 36 + 2 N_max) and the number of valid entries (mask, Eq. (17)).
+    """
+    values, present = network_input_values(previous, sat_ids, innovation, accel, gyro)
+    if normalization is not None:
+        values = normalization(values, sat_ids, present)
     return F.pad(values, (0, FIXED_FEATURE_SIZE + 2 * max_measurements - len(values))), len(values)
+
+
+SYSTEMS = ('G', 'C', 'L')
+FEATURE_GROUPS = ((0, 3), (3, 6), (6, 6 + STATE_SIZE), (6 + STATE_SIZE, FIXED_FEATURE_SIZE))  # d_alpha, d_w, dx_hat, dx_tilde
+
+
+class InputNormalization(nn.Module):
+    """Normalization of the network input X_k (branch exp/input-norm, settings.INPUT_NORMALIZATION).
+
+    'l2': each of the six groups d_alpha, d_w, dx_hat, dx_tilde, dy, dy_tilde divided by its L2 norm
+          (as the input features of KalmanNet [14] and KalmanNet4SensorFusion, F.normalize, eps 1e-12).
+    'zscore': (x - mean) / std with fixed statistics of the training dataset (set_statistics: features of a
+          traditional EKF run): one mean and std per element of the 36 fixed features, and per system (G, C, L)
+          for the residuals dy and the innovations dy_tilde, whose positions are not tied to a satellite. A
+          missing lagged residual (0, A12) stays 0, i.e. the mean. A std of 0 is replaced by 1.
+    The statistics are buffers, so they are saved with the model.
+    """
+
+    def __init__(self):
+        super().__init__()
+        if cfg.INPUT_NORMALIZATION not in ('l2', 'zscore'):
+            raise ValueError(f"INPUT_NORMALIZATION must be 'l2' or 'zscore', not {cfg.INPUT_NORMALIZATION!r}")
+        self.mode = cfg.INPUT_NORMALIZATION
+        for name, size in (('fixed', FIXED_FEATURE_SIZE), ('residual', len(SYSTEMS)), ('innovation', len(SYSTEMS))):
+            self.register_buffer(f'{name}_mean', torch.zeros(size, dtype=torch.float64))
+            self.register_buffer(f'{name}_std', torch.ones(size, dtype=torch.float64))
+
+    def forward(self, values, sat_ids, present):
+        n = len(sat_ids)
+        fixed, residual, innovation = values[:FIXED_FEATURE_SIZE], values[FIXED_FEATURE_SIZE:-n], values[-n:]
+        if self.mode == 'l2':
+            groups = [fixed[a:b] for a, b in FEATURE_GROUPS] + [residual, innovation]
+            return torch.cat([F.normalize(g, dim=0, eps=1e-12) for g in groups])
+        system = torch.tensor([SYSTEMS.index(s[0]) for s in sat_ids])
+        return torch.cat([(fixed - self.fixed_mean) / self.fixed_std,
+                          torch.where(present, (residual - self.residual_mean[system]) / self.residual_std[system],
+                                      torch.zeros_like(residual)),
+                          (innovation - self.innovation_mean[system]) / self.innovation_std[system]])
+
+    @torch.no_grad()
+    def set_statistics(self, samples):
+        """samples: [(X_k, present, sat_ids)] of the training dataset (navigation_filter.run_filter input_samples)."""
+        fixed = torch.stack([values[:FIXED_FEATURE_SIZE] for values, _, _ in samples])
+        self.fixed_mean.copy_(fixed.mean(dim=0))
+        self.fixed_std.copy_(_nonzero(fixed.std(dim=0)))
+        for name in ('residual', 'innovation'):
+            for i, system in enumerate(SYSTEMS):
+                group = []
+                for values, present, sat_ids in samples:
+                    n = len(sat_ids)
+                    in_system = torch.tensor([s[0] == system for s in sat_ids])
+                    if name == 'residual':                                     # only the lagged residuals that exist
+                        group.append(values[FIXED_FEATURE_SIZE:-n][in_system & present])
+                    else:
+                        group.append(values[-n:][in_system])
+                group = torch.cat(group)
+                if len(group) > 1:
+                    getattr(self, f'{name}_mean')[i] = group.mean()
+                    getattr(self, f'{name}_std')[i] = _nonzero(group.std())
+
+
+def _nonzero(std):
+    return torch.where(std > 0, std, torch.ones_like(std))
 
 
 class MaskedCLANetwork(nn.Module):
@@ -43,6 +117,7 @@ class MaskedCLANetwork(nn.Module):
         self.fc_output = nn.Linear(cfg.FC_HIDDEN_UNITS, STATE_SIZE * max_measurements)
         nn.init.zeros_(self.fc_output.weight)            # K = 0 before training (A12)
         nn.init.zeros_(self.fc_output.bias)
+        self.input_normalization = InputNormalization()
 
     def forward(self, features, valid_length, measurement_count, hidden=None):
         """features: padded X_k [D]; returns the Kalman gain [15, N_max] and the LSTM state (h, c)."""

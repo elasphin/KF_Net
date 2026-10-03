@@ -3,7 +3,9 @@
     python train.py  ->  outputs/masked_cla_network.pt (model after the last epoch),
                          outputs/training_history.json, outputs/training_info.json
 
-Training exactly as in the paper (branch exp/paper), nothing added:
+Training of exp/paper with one change (branch exp/input-norm): the network input X_k is normalized,
+settings.INPUT_NORMALIZATION = 'l2' (each feature group to unit norm, as KalmanNet) or 'zscore' (mean and
+std of the features of a traditional EKF run on the training dataset; masked_cla_network.InputNormalization).
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
 averaged over the epochs and the three components (MSE, Table III) plus
@@ -51,8 +53,13 @@ def main():
     measurements = orbits[cfg.LEO_TRAIN_ORBIT]
     max_measurements = max(len(m) for m in measurements)             # N_max of Eq. (16)
 
-    classical = run_filter(data, measurements, fault_detection=False)  # traditional EKF, for comparison only
+    # Traditional EKF, for comparison and for the statistics of the z-score input normalization.
+    input_samples = []
+    classical = run_filter(data, measurements, fault_detection=False, input_samples=input_samples)
     network = MaskedCLANetwork(max_measurements)
+    if cfg.INPUT_NORMALIZATION == 'zscore':
+        network.input_normalization.set_statistics(input_samples)
+    del input_samples
     encoder = [network.conv.weight, network.conv_bias]                  # psi of Ref. [15]: masked CNN
     filter_part = [p for p in network.parameters() if not any(p is q for q in encoder)]   # theta: LSTM, attention, FC
     encoder_optimizer = torch.optim.Adam(encoder, lr=cfg.LEARNING_RATE)
@@ -62,7 +69,7 @@ def main():
         'experiment': cfg.EXPERIMENT, 'dataset': data.name, 'leo_train_orbit': cfg.LEO_TRAIN_ORBIT,
         'training_samples': len(data.fusion_times) - 1,
         'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS, 'l2_weight': cfg.L2_WEIGHT,
-        'backprop_window': cfg.BACKPROP_WINDOW, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
+        'backprop_window': cfg.BACKPROP_WINDOW, 'input_normalization': cfg.INPUT_NORMALIZATION, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
         'max_measurements': max_measurements, 'input_size': FIXED_FEATURE_SIZE + 2 * max_measurements,
         'network': f'Conv1D {cfg.CONV_FILTERS}x{cfg.CONV_KERNEL_SIZE} -> max-pool {cfg.POOL_KERNEL_SIZE} -> '
                    f'LSTM {cfg.LSTM_LAYERS}x{cfg.LSTM_UNITS} (dropout {cfg.LSTM_DROPOUT}) -> attention -> '

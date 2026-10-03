@@ -49,7 +49,10 @@ def get_folders() -> tuple[Path, Path]:
 DATASET_FOLDER, OUTPUT_ROOT = get_folders()
 # Training setup of this branch (exp/<EXPERIMENT>): its outputs and its data cache go to OUTPUT_ROOT/EXPERIMENT,
 # so the runs of the experiment branches do not overwrite each other.
-EXPERIMENT = 'paper'
+# exp/paper with the network input normalized: 'l2' (each feature group to unit norm, as KalmanNet [14]) or
+# 'zscore' (mean and std of the features of a traditional EKF on the training dataset)          [choice A13]
+INPUT_NORMALIZATION = 'zscore'
+EXPERIMENT = f'input-norm-{INPUT_NORMALIZATION}'
 OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------

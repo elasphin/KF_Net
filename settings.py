@@ -49,7 +49,7 @@ def get_folders() -> tuple[Path, Path]:
 DATASET_FOLDER, OUTPUT_ROOT = get_folders()
 # Training setup of this branch (exp/<EXPERIMENT>): its outputs and its data cache go to OUTPUT_ROOT/EXPERIMENT,
 # so the runs of the experiment branches do not overwrite each other.
-EXPERIMENT = 'paper'
+EXPERIMENT = 'alternating'          # exp/paper with joint instead of alternating optimization
 OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------

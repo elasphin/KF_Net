@@ -21,6 +21,10 @@ no early stopping), single-step gradient of Eq. (31) (filter and LSTM state deta
 optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
 gain scale; the model after the last epoch is tested. Every other `exp/...` branch is `exp/paper` with one change.
 
+This branch, `exp/alternating`: joint instead of alternating optimization. Every epoch has the same two passes and
+two Adam steps as `exp/paper`, but each step updates all parameters (in `exp/paper` the first only LSTM, attention and
+FC, the second only the masked CNN).
+
 ## Files
 
 | File | Content |

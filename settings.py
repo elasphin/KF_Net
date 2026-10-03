@@ -36,7 +36,9 @@ LOCAL_OUTPUT_FOLDER = PROJECT_FOLDER / 'outputs'
 
 def get_folders() -> tuple[Path, Path]:
     """(dataset folder, output folder) of the current environment."""
-    if Path('/kaggle').is_dir():                  # Kaggle (checked first: Kaggle also has google.colab installed)
+    # By the environment variables, not the folders: Kaggle also has google.colab installed and Colab can have a
+    # /kaggle folder.
+    if 'KAGGLE_KERNEL_RUN_TYPE' in os.environ:    # Kaggle
         return (KAGGLE_FOLDER if KAGGLE_FOLDER.is_dir() else Path('/kaggle/input')), KAGGLE_OUTPUT_FOLDER
     if 'COLAB_RELEASE_TAG' in os.environ:          # Colab
         if not COLAB_FOLDER.parent.is_dir():       # Drive not mounted yet
@@ -49,10 +51,7 @@ def get_folders() -> tuple[Path, Path]:
 DATASET_FOLDER, OUTPUT_ROOT = get_folders()
 # Training setup of this branch (exp/<EXPERIMENT>): its outputs and its data cache go to OUTPUT_ROOT/EXPERIMENT,
 # so the runs of the experiment branches do not overwrite each other.
-# exp/paper with the back-propagation through time of KalmanNet [14] (V2, then a long fine-tuning), with or without
-# the gain row scale (A11): without it the first Adam step of the attitude and bias rows makes the filter diverge.
-GAIN_SCALE = True
-EXPERIMENT = 'bptt-kalmannet' + ('-gain-scale' if GAIN_SCALE else '')
+EXPERIMENT = 'bptt-kalmannet'       # main with the back-propagation through time of KalmanNet [14]
 OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------

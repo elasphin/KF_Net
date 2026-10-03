@@ -7,7 +7,7 @@
 An interrupted training continues after its last epoch when train.py runs again with the same
 settings, code and data (train.py, outputs/training_state.pt).
 
-Training of exp/paper with one change (branch exp/bptt-kalmannet): back-propagation through time
+Training of main with one change (branch exp/bptt-kalmannet): back-propagation through time
 as in KalmanNet [14] Sec. III-D instead of the single-step gradient of Eq. (31).
 V2 (truncated BPTT): the training dataset is divided into consecutive sub-trajectories of T fusion
 epochs, each filtered from the truth with a new LSTM state (A7); they are shuffled every epoch and
@@ -16,8 +16,6 @@ linearization of navigation.run_filter, LSTM state and network inputs; BACKPROP_
 and one Adam step follows each mini-batch, with the loss averaged over its sub-trajectories (Ref. [14]
 Eq. (14)). V1 (the whole trajectory at once) does not fit in memory, so the warm-up with T = 100 is
 followed by a fine-tuning with T = 1000 (settings.SUBTRAJECTORY_LENGTHS, WARMUP_EPOCHS).
-settings.GAIN_SCALE: the network gain is scaled per row, K = diag(g) K_net, g_i = RMS of row i of the
-traditional EKF gain on the training dataset (A11); without it the filter diverges at the first step.
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
 averaged over the epochs and the three components (MSE, Table III) plus
@@ -25,10 +23,10 @@ gamma ||Theta||^2 (Eq. (32)). Adam with learning rate 0.01 (Table III) for 480 e
 Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
 epoch the filter part theta (LSTM, attention, FC) is updated over all mini-batches with the encoder
 psi (masked CNN) frozen, then psi over the same mini-batches with theta frozen (A15). The whole
-training dataset trains the network (paper Sec. III); there is no validation, early stopping or
-gradient clipping, and the model after the last epoch is tested. The training loss and RMSE are those
-of the sub-trajectories (each starts from the truth). The filter uses the LEO orbit
-settings.LEO_TRAIN_ORBIT (A26; the true orbit by default).
+training dataset trains the network (paper Sec. III); there is no validation, early stopping,
+gradient clipping or gain scale (the network gives K directly, as in main), and the model after the
+last epoch is tested. The training loss and RMSE are those of the sub-trajectories (each starts from
+the truth). The filter uses the LEO orbit settings.LEO_TRAIN_ORBIT (A26; the true orbit by default).
 
 Resume an interrupted training (train.py), e.g. after the end of a Colab or Kaggle session.
 
@@ -179,11 +177,8 @@ def main():
     last = len(data.fusion_times) - 1
     max_measurements = max(len(m) for m in measurements)             # N_max of Eq. (16)
 
-    # Traditional EKF, for comparison and for the output scale of the gain rows (A11, settings.GAIN_SCALE).
-    classical = run_filter(data, measurements, fault_detection=False)
+    classical = run_filter(data, measurements, fault_detection=False)  # traditional EKF, for comparison only
     network = MaskedCLANetwork(max_measurements)
-    if cfg.GAIN_SCALE:
-        network.gain_row_scale.copy_(torch.tensor(np.maximum(classical['gain_row_rms'], 1e-12)))
     encoder = [network.conv.weight, network.conv_bias]                  # psi of Ref. [15]: masked CNN
     filter_part = [p for p in network.parameters() if not any(p is q for q in encoder)]   # theta: LSTM, attention, FC
     encoder_optimizer = torch.optim.Adam(encoder, lr=cfg.LEARNING_RATE)
@@ -196,7 +191,6 @@ def main():
         'backprop_window': cfg.BACKPROP_WINDOW, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
         'bptt': f'KalmanNet V2: sub-trajectories of {cfg.SUBTRAJECTORY_LENGTHS[0]} epochs for {cfg.WARMUP_EPOCHS} '
                 f'epochs, then of {cfg.SUBTRAJECTORY_LENGTHS[1]}; {cfg.BPTT_BATCH_SIZE} per Adam step, shuffled',
-        'gain_scale': cfg.GAIN_SCALE, 'gain_row_scale': network.gain_row_scale.tolist(),
         'max_measurements': max_measurements, 'input_size': FIXED_FEATURE_SIZE + 2 * max_measurements,
         'network': f'Conv1D {cfg.CONV_FILTERS}x{cfg.CONV_KERNEL_SIZE} -> max-pool {cfg.POOL_KERNEL_SIZE} -> '
                    f'LSTM {cfg.LSTM_LAYERS}x{cfg.LSTM_UNITS} (dropout {cfg.LSTM_DROPOUT}) -> attention -> '

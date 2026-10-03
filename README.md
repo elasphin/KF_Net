@@ -29,8 +29,8 @@ This branch, `exp/bptt-kalmannet`: back-propagation through time as in KalmanNet
 gradient. V2: Data01 is divided into sub-trajectories of T = 100 fusion epochs, each filtered from the truth, shuffled
 every epoch, with the gradient through the whole sub-trajectory and one Adam step per 10 of them (loss averaged);
 after `WARMUP_EPOCHS` = 400 the last 80 epochs use T = 1000 (V1 over the whole trajectory does not fit in memory).
-`GAIN_SCALE` (default `True`, outputs in `bptt-kalmannet-gain-scale`; `False`: `bptt-kalmannet`) adds the gain row
-scale of A11: without it the filter diverges at the first Adam step. Compare with `exp/gain-scale` for the BPTT effect.
+Everything else is as in `main` (no gain row scale: the network gives K directly), so the comparison with `main` shows
+the effect of BPTT alone.
 
 ## Running the experiments (Colab / Kaggle)
 

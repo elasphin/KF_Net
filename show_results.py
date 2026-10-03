@@ -50,9 +50,9 @@ import settings as cfg
 
 
 def find_experiments(root):
-    """{name: folder} of every experiment under root, exp/paper first."""
+    """{name: folder} of every experiment under root, main (training as the paper) first."""
     folders = {path.parent.relative_to(root).as_posix(): path.parent for path in root.rglob('training_info.json')}
-    return dict(sorted(folders.items(), key=lambda item: (item[0] != 'paper', item[0])))
+    return dict(sorted(folders.items(), key=lambda item: (item[0] not in ('main', 'paper'), item[0] != 'main', item[0])))
 
 
 def read_experiment(folder):

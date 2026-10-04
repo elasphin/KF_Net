@@ -1,7 +1,6 @@
 """Checks that the real dataset is read and synchronized correctly, and baselines for the training run.
 
     python check_dataset.py          (after train.py: uses the cache and leo_orbit_error_train.json)
-    python check_dataset.py validation   (the validation dataset, A21; after train.py)
     python check_dataset.py test     (the testing dataset; after test.py has written leo_orbit_error_test.json)
 
 Everything is compared with the post-processed truth of the same dataset; the expected values are printed with

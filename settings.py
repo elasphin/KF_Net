@@ -18,34 +18,47 @@ import numpy as np
 # --- Dataset and output folders in Colab, on Kaggle or on my computer --------
 PROJECT_FOLDER = Path(__file__).resolve().parent
 
-# Colab: Google Drive folder "My Drive/Dataset"
+# Colab: Google Drive folder "My Drive/Dataset" (or "My Drive/dataset": Drive names are case-sensitive)
 # https://drive.google.com/drive/folders/1npnGKO7qwgKPvfoKTclzeA59wfpm860g
 # Outputs also go to Drive, so they are kept after the Colab runtime ends.
 COLAB_FOLDER = Path('/content/drive/MyDrive/Dataset')
 COLAB_OUTPUT_FOLDER = Path('/content/drive/MyDrive/KF_Net_outputs')
 
-# Kaggle: dataset attached to the notebook ("Add Input"); all of /kaggle/input is searched if this is missing.
-# Outputs go to /kaggle/working, the only writable folder that is kept with the notebook version.
-KAGGLE_FOLDER = Path('/kaggle/input/datasets/elasphin/mknet-project')
+# Kaggle: dataset elasphin/dataset (title "Dataset") attached to the notebook ("Add Input"); all of /kaggle/input
+# is searched if this folder is missing. Outputs go to /kaggle/working, the only writable folder that is kept
+# with the notebook version.
+KAGGLE_FOLDER = Path('/kaggle/input/datasets/elasphin/dataset')
 KAGGLE_OUTPUT_FOLDER = Path('/kaggle/working/outputs')
 
-# My computer: the Dataset and outputs folders next to this file
+# My computer: the Dataset folder next to this file, else the SmartPNT-POS Dataset folder of my computer;
+# the outputs folder next to this file
 LOCAL_FOLDER = PROJECT_FOLDER / 'Dataset'
+MY_COMPUTER_FOLDER = Path(r'C:\Users\elasp\Desktop\MSc\MSc Project\SmartPNT-Pos\Dataset')
 LOCAL_OUTPUT_FOLDER = PROJECT_FOLDER / 'outputs'
 
 
+def first_folder(*folders: Path) -> Path:
+    """The first of the folders that exists (the first one if none does, for the error messages)."""
+    return next((folder for folder in folders if folder.is_dir()), folders[0])
+
+
 def get_folders() -> tuple[Path, Path]:
-    """(dataset folder, output folder) of the current environment."""
+    """(dataset folder, output folder) of the current environment.
+
+    The dataset folder holds the data folders (Data01_..., Data02_..., Data11_...), LEO_TLE, IMUErrorModel.txt and
+    the products, at any depth (they are searched in the whole folder); the same structure in Colab, on Kaggle and
+    on my computer.
+    """
     # By the environment variables, not the folders: Kaggle also has google.colab installed and Colab can have a
     # /kaggle folder.
     if 'KAGGLE_KERNEL_RUN_TYPE' in os.environ:    # Kaggle
-        return (KAGGLE_FOLDER if KAGGLE_FOLDER.is_dir() else Path('/kaggle/input')), KAGGLE_OUTPUT_FOLDER
+        return first_folder(KAGGLE_FOLDER, Path('/kaggle/input')), KAGGLE_OUTPUT_FOLDER
     if 'COLAB_RELEASE_TAG' in os.environ:          # Colab
         if not COLAB_FOLDER.parent.is_dir():       # Drive not mounted yet
             from google.colab import drive
             drive.mount('/content/drive')
-        return COLAB_FOLDER, COLAB_OUTPUT_FOLDER
-    return LOCAL_FOLDER, LOCAL_OUTPUT_FOLDER
+        return first_folder(COLAB_FOLDER, COLAB_FOLDER.with_name('dataset')), COLAB_OUTPUT_FOLDER
+    return first_folder(LOCAL_FOLDER, MY_COMPUTER_FOLDER), LOCAL_OUTPUT_FOLDER
 
 
 DATASET_FOLDER, OUTPUT_ROOT = get_folders()
@@ -55,7 +68,7 @@ EXPERIMENT = 'alternating'          # exp/paper with joint instead of alternatin
 OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
-KAGGLE_DATASET = 'elasphin/mknet-project'                      # [paper Sec. III]
+KAGGLE_DATASET = 'elasphin/dataset'     # my copy of SmartPNT-POS (+ Data11, LEO_TLE), for kagglehub [paper Sec. III]
 PRODUCTS_FOLDER = DATASET_FOLDER / 'products'   # SP3, CLK, brdm if not in the data folder; then DATASET_FOLDER itself
 TRAIN_FOLDER_NAME = 'Data01_20230102_ISA-100C_Vehicle_Complex'  # training set (~150 min, Table I)
 TEST_FOLDER_NAME = 'Data02_20220309_ISA-100C_Vehicle_Complex'   # testing set (~110 min, Table I)
@@ -145,7 +158,7 @@ LEO_FORCE_MODEL = 'numba'          # 'python' (leo_pseudorange.equations_of_moti
 DATA_CACHE = True                  # keep the read dataset and the simulated measurements in OUTPUT_FOLDER/cache
 
 if __name__ == '__main__':
-    print('Dataset folder:', DATASET_FOLDER)
-    for path in sorted(DATASET_FOLDER.iterdir()):
+    print('Dataset folder:', DATASET_FOLDER, '' if DATASET_FOLDER.is_dir() else '(missing)')
+    for path in sorted(DATASET_FOLDER.iterdir()) if DATASET_FOLDER.is_dir() else ():
         print('  ', path.name)
     print('Output folder: ', OUTPUT_FOLDER)

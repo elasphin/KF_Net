@@ -10,14 +10,14 @@ settings, code and data (train.py, outputs/training_state.pt).
 
 Training of exp/paper with one change (branch exp/tbptt-sensorfusion): the truncated back-propagation
 through time of KalmanNet4SensorFusion (Song et al., IEEE SPL 2024; fusion_trainer.py) instead of one
-Adam step per pass. The training dataset is divided into consecutive sequences of SEQUENCE_LENGTH
+Adam step per pass. The training part is divided into consecutive sequences of SEQUENCE_LENGTH
 fusion epochs, each filtered from the truth with a new LSTM state (A7), shuffled every epoch; the
 sequences of a batch (TBPTT_BATCH_SIZE, None = all) run in lockstep, and after every window of
 TBPTT_WINDOW epochs one Adam step follows on the mean window loss of the batch, while the filters go
 on. The filter state is detached every epoch (first-order Markov, BACKPROP_WINDOW = 1, so the
 gradient of each epoch is that of Eq. (31)), the LSTM state every LSTM_DETACH_STEP epochs and at the
 end of every window (navigation.filter_steps).
-As on every branch, a validation dataset is added (A21).
+As on every branch, a validation part is added (A21).
 Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
 "postprocessing position results as training labels", Fig. 8: truth trajectory),
 averaged over the epochs and the three components (MSE, Table III) plus
@@ -26,21 +26,21 @@ Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15).
 Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
 epoch the filter part theta (LSTM, attention, FC) is updated with the encoder
 psi (masked CNN) frozen over all batches, then psi over the same batches with theta frozen (A15).
-The whole training dataset trains the network (paper Sec. III); there is no early stopping, gradient
-clipping or gain scale. The training loss and RMSE are those of the sequences (each starts from the
-truth). Validation (A21, not in the paper): after every epoch the network runs (no dropout, no
-gradient, no fault detection) on a third SmartPNT-POS dataset (settings.VALIDATION_FOLDER_NAME),
-whole (not in sequences, as the test), from the truth at its start, and the model with the lowest
-validation loss (Eq. (30), as the training loss) is the one tested; all TRAINING_EPOCHS epochs run and
-the model after the last epoch is kept too. The validation run uses no random numbers, so the training
-itself is the same as without it. The filter uses the LEO orbit settings.LEO_TRAIN_ORBIT (A26; the
-true orbit by default), also on the validation dataset.
+The training dataset trains the network (paper Sec. III) except its last settings.VALIDATION_FRACTION
+of fusion epochs; there is no early stopping, gradient clipping or gain scale. The training loss and
+RMSE are those of the sequences (each starts from the truth). Validation (A21, not in the paper):
+after every epoch the network runs (no dropout, no gradient, no fault detection) on that last part of
+the training dataset, whole (not in sequences, as the test), from the truth at its first epoch, and
+the model with the lowest validation loss (Eq. (30), as the training loss) is the one tested; all
+TRAINING_EPOCHS epochs run and the model after the last epoch is kept too. The validation run uses no
+random numbers, so the training itself is the same as without it. The filter uses the LEO orbit
+settings.LEO_TRAIN_ORBIT (A26; the true orbit by default), also on the validation part.
 
 Resume an interrupted training (train.py), e.g. after the end of a Colab or Kaggle session.
 
 After every epoch train.py keeps the whole training state in OUTPUT_FOLDER/training_state.pt: network,
 optimizers, random generators, history, info and a fingerprint of everything the training depends on
-(settings, training code, data cache keys of the training and validation datasets). Running train.py
+(settings, training code, data cache key of the training dataset). Running train.py
 again continues after the last saved epoch if the fingerprint is the same, so the result equals that of
 an uninterrupted run; otherwise (settings, code or data changed) a new training starts. TRAINING_EPOCHS is
 not in the fingerprint: raising it continues a finished training. python train.py --restart always starts a
@@ -71,14 +71,10 @@ def training_state_file():
     return cfg.OUTPUT_FOLDER / 'training_state.pt'
 
 
-def training_data_key():
-    return cache_key('train') + cache_key('validation')
-
-
 @functools.cache
 def training_fingerprint():
-    """Hash of the settings, the training code and the training and validation data (dataset keys)."""
-    digest = hashlib.sha256(training_data_key().encode())
+    """Hash of the settings, the training code and the training data (dataset key; the validation part is in it)."""
+    digest = hashlib.sha256(cache_key('train').encode())
     for name, value in sorted(vars(cfg).items()):
         if name.isupper() and name not in NOT_TRAINING_SETTINGS and not name.endswith('_FOLDER'):
             digest.update(f'{name}={value!r}\n'.encode())
@@ -148,6 +144,17 @@ CHECKPOINT_FILE = cfg.OUTPUT_FOLDER / 'masked_cla_network.pt'              # bes
 LAST_CHECKPOINT_FILE = cfg.OUTPUT_FOLDER / 'masked_cla_network_last.pt'    # after the last epoch
 
 
+def validation_start(data):
+    """First fusion epoch of the validation part (A21): the last VALIDATION_FRACTION of the training dataset.
+    The training runs over fusion epochs 0..start, the validation over start..last, from the truth at start."""
+    last = len(data.fusion_times) - 1
+    start = last - round(cfg.VALIDATION_FRACTION * last)
+    if not 0 < start < last:
+        raise ValueError(f'VALIDATION_FRACTION = {cfg.VALIDATION_FRACTION} leaves no training or no validation '
+                         f'epochs of the {last} fusion epochs of {data.name}')
+    return start
+
+
 def sequences(last, length):
     """(first, last) of the consecutive sequences of 'length' fusion epochs over 0..last (their train_seq_len)."""
     return [(first, min(first + length, last)) for first in range(0, last, length)]
@@ -196,12 +203,10 @@ def main():
     start_time = time.time()
     data, orbits = load_dataset('train')
     measurements = orbits[cfg.LEO_TRAIN_ORBIT]
-    last = len(data.fusion_times) - 1
-    max_measurements = max(len(m) for m in measurements)             # N_max of Eq. (16)
-    validation_data, validation_orbits = load_dataset('validation')  # A21; N_max of the training dataset (A16)
-    validation_measurements = validation_orbits[cfg.LEO_TRAIN_ORBIT]
+    split, last = validation_start(data), len(data.fusion_times) - 1  # training 0..split, validation split..last (A21)
+    max_measurements = max(len(m) for m in measurements[:split + 1])  # N_max of Eq. (16), training part only
 
-    classical = run_filter(data, measurements, fault_detection=False)  # traditional EKF, for comparison only
+    classical = run_filter(data, measurements, last=split, fault_detection=False)  # traditional EKF, comparison only
     network = MaskedCLANetwork(max_measurements)
     encoder = [network.conv.weight, network.conv_bias]                  # psi of Ref. [15]: masked CNN
     filter_part = [p for p in network.parameters() if not any(p is q for q in encoder)]   # theta: LSTM, attention, FC
@@ -210,8 +215,9 @@ def main():
 
     info = {
         'experiment': cfg.EXPERIMENT, 'dataset': data.name, 'leo_train_orbit': cfg.LEO_TRAIN_ORBIT,
-        'training_samples': last,
-        'validation_dataset': validation_data.name, 'validation_samples': len(validation_data.fusion_times) - 1,
+        'training_samples': split, 'training_fusion_epochs': f'0..{split}',
+        'validation_dataset': data.name, 'validation_fraction': cfg.VALIDATION_FRACTION,
+        'validation_samples': last - split, 'validation_fusion_epochs': f'{split}..{last}',
         'model_selection': 'lowest validation loss (A21)',
         'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS, 'l2_weight': cfg.L2_WEIGHT,
         'backprop_window': cfg.BACKPROP_WINDOW,
@@ -226,7 +232,7 @@ def main():
         'trainable_parameters': sum(p.numel() for p in network.parameters()),
         'classical_ekf_training_position_rmse_m': classical['position_rmse_m'],
         'classical_ekf_validation_position_rmse_m': run_filter(
-            validation_data, validation_measurements, fault_detection=False,
+            data, measurements, first=split, fault_detection=False,
             max_measurements=max_measurements)['position_rmse_m'],
     }
     print(json.dumps(info, indent=1))
@@ -235,13 +241,13 @@ def main():
     first_epoch, history, info, time_before = resume_training(network, optimizers, info, rng)
     best_loss = min((h['validation_loss'] for h in history), default=float('inf'))
     for epoch in range(first_epoch, cfg.TRAINING_EPOCHS + 1):
-        pieces = sequences(last, cfg.SEQUENCE_LENGTH)
+        pieces = sequences(split, cfg.SEQUENCE_LENGTH)                  # training part only (A21)
         order = rng.permutation(len(pieces))                             # shuffled every epoch
         size = cfg.TBPTT_BATCH_SIZE or len(pieces)
         batches = [[pieces[i] for i in order[j:j + size]] for j in range(0, len(order), size)]
         training_pass(network, filter_optimizer, filter_part, data, measurements, batches)   # theta, psi frozen
         train = training_pass(network, encoder_optimizer, encoder, data, measurements, batches)  # psi, theta frozen
-        validation = run_filter(validation_data, validation_measurements, network, fault_detection=False)   # A21
+        validation = run_filter(data, measurements, network, first=split, fault_detection=False)   # A21
 
         history.append({'epoch': epoch, 'train_loss': train['loss'], 'train_position_rmse_m': train['position_rmse_m'],
                         'validation_loss': validation['loss'],

@@ -205,7 +205,8 @@ def test_lines(orbit):
 lines = [
     'DATA',
     f"  training samples (epochs)   {info['training_samples']}",
-    f"  validation dataset (A21)    {info.get('validation_dataset', '-')}",
+    f"  validation (A21)            {info.get('validation_dataset', '-')}, "
+    f"fusion epochs {info.get('validation_fusion_epochs', '-')}",
     f"  validation samples          {info.get('validation_samples', '-')}",
     f"  test samples                {test[orbits[0]]['masked_cla_kalmannet']['epochs']}",
     f"  LEO orbit, training         {info['leo_train_orbit']}",

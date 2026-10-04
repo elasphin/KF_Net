@@ -12,7 +12,7 @@ SmartPNT-POS Dataset folder on my computer (settings.get_folders). If it is not 
 this project needs are downloaded with kagglehub; this needs a Kaggle API token (~/.kaggle/kaggle.json
 or KAGGLE_USERNAME / KAGGLE_KEY).
 
-Read dataset and simulated measurements of 'train', 'validation' or 'test', kept on disk between runs
+Read dataset and simulated measurements of 'train' or 'test', kept on disk between runs
 (settings.DATA_CACHE).
 
     from dataset import load_dataset
@@ -31,8 +31,8 @@ orbit error variance of the filter R (A25) is not kept: it is set from leo_orbit
 in every run, as before.
 
 Statistics taken from the data (LEO C/N0 per elevation, A3; orbit term of R, A25): from the whole dataset (the
-whole training dataset trains the network, as in the paper; the validation and testing datasets have their own
-environment).
+training dataset with its validation part, A21, as the paper uses the whole training dataset; the testing dataset
+has its own environment).
 """
 import hashlib
 import math
@@ -399,7 +399,7 @@ def download_dataset_folder(folder_name: str) -> Path:
     files = [n for n in names if folder_name in PurePosixPath(n).parts]
     if not files:
         raise FileNotFoundError(f'{folder_name} was not found in the Kaggle dataset {cfg.KAGGLE_DATASET}. '
-                                f'Set TRAIN_FOLDER_NAME / VALIDATION_FOLDER_NAME / TEST_FOLDER_NAME in settings.py.')
+                                f'Set TRAIN_FOLDER_NAME / TEST_FOLDER_NAME in settings.py.')
 
     def download(names):
         return [Path(kagglehub.dataset_download(cfg.KAGGLE_DATASET, path=n)) for n in names]
@@ -417,12 +417,12 @@ def download_dataset_folder(folder_name: str) -> Path:
 
 # --- Dataset -----------------------------------------------------------------
 def split_folder_name(split: str) -> str:
-    """Dataset folder of 'train', 'validation' (A21) or 'test' (paper Sec. III)."""
-    return {'train': cfg.TRAIN_FOLDER_NAME, 'validation': cfg.VALIDATION_FOLDER_NAME, 'test': cfg.TEST_FOLDER_NAME}[split]
+    """Dataset folder of 'train' (with its validation part, A21) or 'test' (paper Sec. III)."""
+    return {'train': cfg.TRAIN_FOLDER_NAME, 'test': cfg.TEST_FOLDER_NAME}[split]
 
 
 def load_navigation_data(split: str) -> NavigationData:
-    """Load the 'train', 'validation' or 'test' dataset on the GNSS epochs.
+    """Load the 'train' or 'test' dataset on the GNSS epochs.
 
     Only the span of the fusion epochs (settings.MAX_FUSION_EPOCHS[split]) is read from the RINEX,
     truth, SP3 and CLK files.
@@ -473,12 +473,12 @@ DATA_CODE = ('dataset.py', 'measurements.py', 'leo_pseudorange.py', 'egm96_degre
 NOT_DATA_SETTINGS = {
     'CONV_FILTERS', 'CONV_KERNEL_SIZE', 'POOL_KERNEL_SIZE', 'LSTM_UNITS', 'LSTM_LAYERS', 'LSTM_DROPOUT',
     'FC_HIDDEN_UNITS', 'MASK_EPSILON', 'RANDOM_SEED', 'LEARNING_RATE', 'TRAINING_EPOCHS', 'L2_WEIGHT',
-    'BACKPROP_WINDOW', 'INPUT_NORMALIZATION',
+    'BACKPROP_WINDOW', 'INPUT_NORMALIZATION', 'VALIDATION_FRACTION',
     'FALSE_ALARM_PROBABILITY', 'HORIZONTAL_PL_FACTOR', 'VERTICAL_PL_FACTOR', 'ALERT_LIMIT',
     'INS_MECHANIZATION', 'DATA_CACHE',
     'LEO_TRAIN_ORBIT', 'LEO_TEST_ORBITS',          # only the orbits of the split are in the key (split_orbits)
     'MAX_FUSION_EPOCHS',                           # only the limit of the split is in the key
-    'TRAIN_FOLDER_NAME', 'VALIDATION_FOLDER_NAME', 'TEST_FOLDER_NAME',   # the folder of the split is in the key
+    'TRAIN_FOLDER_NAME', 'TEST_FOLDER_NAME',       # the folder of the split is in the key
     'PROJECT_FOLDER', 'COLAB_FOLDER', 'COLAB_OUTPUT_FOLDER', 'KAGGLE_FOLDER', 'KAGGLE_OUTPUT_FOLDER', 'LOCAL_FOLDER',
     'MY_COMPUTER_FOLDER', 'LOCAL_OUTPUT_FOLDER',   # candidates of DATASET_FOLDER / OUTPUT_FOLDER (in the key)
 }
@@ -574,7 +574,6 @@ def read_and_simulate(split):
 
 
 def load_dataset(split):
-    """Dataset and {LEO filter orbit: merged GNSS + LEO measurements of every fusion epoch} of 'train', 'validation'
-    or 'test'."""
+    """Dataset and {LEO filter orbit: merged GNSS + LEO measurements of every fusion epoch} of 'train' or 'test'."""
     data, gnss, leo, range_errors = read_and_simulate(split)
     return data, prepare_measurements(split, gnss, leo, range_errors)

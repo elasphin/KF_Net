@@ -7,12 +7,13 @@ settings.PRODUCTS_FOLDER or in settings.DATASET_FOLDER itself, searched in this 
 IMUErrorModel.txt of the dataset (initial bias standard deviations, in the folder or above it).
 
 The dataset folder is searched in settings.DATASET_FOLDER (any depth): the Google
-Drive folder in Colab, /kaggle/input on Kaggle (no download), ./Dataset on my
-computer. If it is not there, only the files this project needs are downloaded
-with kagglehub; this needs a Kaggle API token (~/.kaggle/kaggle.json or
-KAGGLE_USERNAME / KAGGLE_KEY).
+Drive folder in Colab, the Kaggle dataset elasphin/dataset on Kaggle (no download), ./Dataset or the
+SmartPNT-POS Dataset folder on my computer (settings.get_folders). If it is not there, only the files
+this project needs are downloaded with kagglehub; this needs a Kaggle API token (~/.kaggle/kaggle.json
+or KAGGLE_USERNAME / KAGGLE_KEY).
 
-Read dataset and simulated measurements of 'train' or 'test', kept on disk between runs (settings.DATA_CACHE).
+Read dataset and simulated measurements of 'train', 'validation' or 'test', kept on disk between runs
+(settings.DATA_CACHE).
 
     from dataset import load_dataset
     data, measurements = load_dataset('train')      # measurements: {LEO filter orbit: epochs} (A26)
@@ -21,7 +22,8 @@ Reading the RINEX/IMU/truth files, the GNSS satellite orbits and the LEO orbit i
 simulation give the same result in every run (fixed seeds), so they are done once and kept in
 OUTPUT_FOLDER/cache/<split>_<key>.pkl. The key is a hash of everything they depend on:
   - all settings except the network, training, integrity and run-time ones (NOT_DATA_SETTINGS),
-  - the LEO filter orbits of the split (LEO_TRAIN_ORBIT or LEO_TEST_ORBITS, A26) and its MAX_FUSION_EPOCHS,
+  - the LEO filter orbits of the split (LEO_TRAIN_ORBIT, or LEO_TEST_ORBITS for the test, A26) and its
+    MAX_FUSION_EPOCHS,
   - the code that makes them (DATA_CODE files),
   - name, size and modification time of the input files (data folder, products, dataset root, TLE files).
 A change in any of these makes a new cache file (the old one of that split is removed). The LEO
@@ -29,7 +31,8 @@ orbit error variance of the filter R (A25) is not kept: it is set from leo_orbit
 in every run, as before.
 
 Statistics taken from the data (LEO C/N0 per elevation, A3; orbit term of R, A25): from the whole dataset (the
-whole training dataset trains the network, as in the paper; the testing dataset has its own environment).
+whole training dataset trains the network, as in the paper; the validation and testing datasets have their own
+environment).
 """
 import hashlib
 import math
@@ -396,7 +399,7 @@ def download_dataset_folder(folder_name: str) -> Path:
     files = [n for n in names if folder_name in PurePosixPath(n).parts]
     if not files:
         raise FileNotFoundError(f'{folder_name} was not found in the Kaggle dataset {cfg.KAGGLE_DATASET}. '
-                                f'Set TRAIN_FOLDER_NAME / TEST_FOLDER_NAME in settings.py.')
+                                f'Set TRAIN_FOLDER_NAME / VALIDATION_FOLDER_NAME / TEST_FOLDER_NAME in settings.py.')
 
     def download(names):
         return [Path(kagglehub.dataset_download(cfg.KAGGLE_DATASET, path=n)) for n in names]
@@ -413,13 +416,18 @@ def download_dataset_folder(folder_name: str) -> Path:
 
 
 # --- Dataset -----------------------------------------------------------------
+def split_folder_name(split: str) -> str:
+    """Dataset folder of 'train', 'validation' (A21) or 'test' (paper Sec. III)."""
+    return {'train': cfg.TRAIN_FOLDER_NAME, 'validation': cfg.VALIDATION_FOLDER_NAME, 'test': cfg.TEST_FOLDER_NAME}[split]
+
+
 def load_navigation_data(split: str) -> NavigationData:
-    """Load the 'train' or 'test' dataset (paper Sec. III) on the GNSS epochs.
+    """Load the 'train', 'validation' or 'test' dataset on the GNSS epochs.
 
     Only the span of the fusion epochs (settings.MAX_FUSION_EPOCHS[split]) is read from the RINEX,
     truth, SP3 and CLK files.
     """
-    folder = find_dataset_folder(cfg.TRAIN_FOLDER_NAME if split == 'train' else cfg.TEST_FOLDER_NAME)
+    folder = find_dataset_folder(split_folder_name(split))
     product_folders = (folder, cfg.PRODUCTS_FOLDER, cfg.DATASET_FOLDER)
     imu_type, mounting, lever_arm_vehicle = read_rover_info(folder / 'README.xml')
 
@@ -470,15 +478,15 @@ NOT_DATA_SETTINGS = {
     'INS_MECHANIZATION', 'DATA_CACHE',
     'LEO_TRAIN_ORBIT', 'LEO_TEST_ORBITS',          # only the orbits of the split are in the key (split_orbits)
     'MAX_FUSION_EPOCHS',                           # only the limit of the split is in the key
-    'TRAIN_FOLDER_NAME', 'TEST_FOLDER_NAME',      # the folder of the split is in the key itself
+    'TRAIN_FOLDER_NAME', 'VALIDATION_FOLDER_NAME', 'TEST_FOLDER_NAME',   # the folder of the split is in the key
     'PROJECT_FOLDER', 'COLAB_FOLDER', 'COLAB_OUTPUT_FOLDER', 'KAGGLE_FOLDER', 'KAGGLE_OUTPUT_FOLDER', 'LOCAL_FOLDER',
-    'LOCAL_OUTPUT_FOLDER',                        # candidates of DATASET_FOLDER / OUTPUT_FOLDER (these are in the key)
+    'MY_COMPUTER_FOLDER', 'LOCAL_OUTPUT_FOLDER',   # candidates of DATASET_FOLDER / OUTPUT_FOLDER (in the key)
 }
 
 
 def split_orbits(split):
-    """LEO filter orbits of the split (A26): the training orbit, or every test orbit."""
-    return (cfg.LEO_TRAIN_ORBIT,) if split == 'train' else tuple(cfg.LEO_TEST_ORBITS)
+    """LEO filter orbits of the split (A26): every test orbit for the test, else the training orbit."""
+    return tuple(cfg.LEO_TEST_ORBITS) if split == 'test' else (cfg.LEO_TRAIN_ORBIT,)
 
 
 def simulate_measurements(data, split):
@@ -521,7 +529,7 @@ def input_files(folder):
 
 
 def cache_key(split):
-    folder_name = cfg.TRAIN_FOLDER_NAME if split == 'train' else cfg.TEST_FOLDER_NAME
+    folder_name = split_folder_name(split)
     folder = find_dataset_folder(folder_name)
     digest = hashlib.sha256(f'{split} {folder_name} {split_orbits(split)} {cfg.MAX_FUSION_EPOCHS[split]}'.encode())
     for name, value in sorted(vars(cfg).items()):
@@ -566,6 +574,7 @@ def read_and_simulate(split):
 
 
 def load_dataset(split):
-    """Dataset and {LEO filter orbit: merged GNSS + LEO measurements of every fusion epoch} of 'train' or 'test'."""
+    """Dataset and {LEO filter orbit: merged GNSS + LEO measurements of every fusion epoch} of 'train', 'validation'
+    or 'test'."""
     data, gnss, leo, range_errors = read_and_simulate(split)
     return data, prepare_measurements(split, gnss, leo, range_errors)

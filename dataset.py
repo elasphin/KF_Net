@@ -7,10 +7,10 @@ settings.PRODUCTS_FOLDER or in settings.DATASET_FOLDER itself, searched in this 
 IMUErrorModel.txt of the dataset (initial bias standard deviations, in the folder or above it).
 
 The dataset folder is searched in settings.DATASET_FOLDER (any depth): the Google
-Drive folder in Colab, /kaggle/input on Kaggle (no download), ./Dataset on my
-computer. If it is not there, only the files this project needs are downloaded
-with kagglehub; this needs a Kaggle API token (~/.kaggle/kaggle.json or
-KAGGLE_USERNAME / KAGGLE_KEY).
+Drive folder in Colab, the Kaggle dataset elasphin/dataset on Kaggle (no download), ./Dataset or the
+SmartPNT-POS Dataset folder on my computer (settings.get_folders). If it is not there, only the files
+this project needs are downloaded with kagglehub; this needs a Kaggle API token (~/.kaggle/kaggle.json
+or KAGGLE_USERNAME / KAGGLE_KEY).
 
 Read dataset and simulated measurements of 'train', 'validation' or 'test', kept on disk between runs
 (settings.DATA_CACHE).
@@ -480,7 +480,7 @@ NOT_DATA_SETTINGS = {
     'MAX_FUSION_EPOCHS',                           # only the limit of the split is in the key
     'TRAIN_FOLDER_NAME', 'VALIDATION_FOLDER_NAME', 'TEST_FOLDER_NAME',   # the folder of the split is in the key
     'PROJECT_FOLDER', 'COLAB_FOLDER', 'COLAB_OUTPUT_FOLDER', 'KAGGLE_FOLDER', 'KAGGLE_OUTPUT_FOLDER', 'LOCAL_FOLDER',
-    'LOCAL_OUTPUT_FOLDER',                        # candidates of DATASET_FOLDER / OUTPUT_FOLDER (these are in the key)
+    'MY_COMPUTER_FOLDER', 'LOCAL_OUTPUT_FOLDER',   # candidates of DATASET_FOLDER / OUTPUT_FOLDER (in the key)
 }
 
 

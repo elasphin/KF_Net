@@ -77,24 +77,27 @@ The paper uses the SmartPNT-POS dataset: <https://www.kaggle.com/datasets/fengzh
 validation, not in the paper: `Data11_20221230_ISA-100C_CAR_Complex`, A21; change the names in `settings.py` if the
 folders are named differently on Kaggle).
 
-The data folder is set at the top of `settings.py` (`python settings.py` shows it):
+The data folder is set at the top of `settings.py` (`python settings.py` shows it). It has the same structure in Colab,
+on Kaggle and on my computer (the folders and files are searched at any depth inside it):
 
-1. **Colab**: Google Drive is mounted and the data is read from `/content/drive/MyDrive/Dataset`
-   (the Drive folder <https://drive.google.com/drive/folders/1npnGKO7qwgKPvfoKTclzeA59wfpm860g>). If a script
-   run with `!python` cannot mount Drive, run `from google.colab import drive; drive.mount('/content/drive')`
+```
+Dataset/
+├── Data01_20230102_ISA-100C_Vehicle_Complex/   # training
+├── Data02_20220309_ISA-100C_Vehicle_Complex/   # testing
+├── Data11_20221230_ISA-100C_CAR_Complex/       # validation (A21)
+├── LEO_TLE/           # TLE files (*.txt) of the LEO satellites around the three days
+├── IMUErrorModel.txt  # IMU error model of SmartPNT-POS (A7), if not inside or above the data folders
+└── products/          # *.sp3, *.clk, brdm* of the three days, if not inside the data folders
+```
+
+1. **Colab**: Google Drive is mounted and the data is read from `/content/drive/MyDrive/Dataset` (or
+   `/content/drive/MyDrive/dataset`; the Drive folder <https://drive.google.com/drive/folders/1npnGKO7qwgKPvfoKTclzeA59wfpm860g>).
+   If a script run with `!python` cannot mount Drive, run `from google.colab import drive; drive.mount('/content/drive')`
    in a notebook cell first.
-2. **Kaggle notebook** with the dataset attached: read directly from `/kaggle/input/datasets/elasphin/mknet-project`
-   (all of `/kaggle/input` is searched if that folder is missing).
-3. **My computer**: anywhere under `Dataset/` next to the code (any depth), for example:
-
-   ```
-   Dataset/
-   ├── Data01_20230102_ISA-100C_Vehicle_Complex/
-   ├── Data02_20220309_ISA-100C_Vehicle_Complex/
-   ├── Data11_20221230_ISA-100C_CAR_Complex/      # validation (A21)
-   ├── LEO_TLE/           # TLE files (*.txt) of the LEO satellites around the three days
-   └── products/          # *.sp3, *.clk, brdm* of the three days, if not inside the data folders
-   ```
+2. **Kaggle notebook** with the Kaggle dataset `elasphin/dataset` (title "Dataset") attached: read directly from
+   `/kaggle/input/datasets/elasphin/dataset` (all of `/kaggle/input` is searched if that folder is missing).
+3. **My computer**: `Dataset/` next to the code, else
+   `C:\Users\elasp\Desktop\MSc\MSc Project\SmartPNT-Pos\Dataset` (`settings.MY_COMPUTER_FOLDER`).
 
 If the folders are not found there, only the needed files are downloaded with `kagglehub`. Put your Kaggle
 API token in `~/.kaggle/kaggle.json` (or set `KAGGLE_USERNAME` and `KAGGLE_KEY`).

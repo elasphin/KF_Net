@@ -62,10 +62,10 @@ def get_folders() -> tuple[Path, Path]:
 
 
 DATASET_FOLDER, OUTPUT_ROOT = get_folders()
-# Training setup of this branch (exp/<EXPERIMENT>): its outputs and its data cache go to OUTPUT_ROOT/EXPERIMENT,
-# so the runs of the experiment branches do not overwrite each other.
-EXPERIMENT = 'tbptt-sensorfusion'   # exp/paper with the truncated BPTT of KalmanNet4SensorFusion
-OUTPUT_FOLDER = OUTPUT_ROOT / EXPERIMENT
+# Training setup of this branch (exp/<EXPERIMENT>): its data cache goes to OUTPUT_ROOT/EXPERIMENT and the outputs of
+# each loss and learning rate to OUTPUT_FOLDER (below), so the runs of the branches do not overwrite each other.
+EXPERIMENT = 'tbptt-sensorfusion'   # main with the truncated BPTT of KalmanNet4SensorFusion
+EXPERIMENT_FOLDER = OUTPUT_ROOT / EXPERIMENT
 
 # --- Dataset (paper Sec. III: SmartPNT-POS, Kaggle) --------------------------
 KAGGLE_DATASET = 'elasphin/dataset'     # my copy of SmartPNT-POS (+ Data11, LEO_TLE), for kagglehub [paper Sec. III]
@@ -143,7 +143,7 @@ MASK_EPSILON = 1e-6                # epsilon of Eq. (22)                        
 # gradient clipping or gain scale. Added (A21): its last VALIDATION_FRACTION is kept out of the training; after
 # every epoch the network runs on it and the model with the lowest validation loss is the one tested (the model
 # after the last epoch is kept as well).
-LEARNING_RATE = 0.01               # Adam                                         [paper Table III, Sec. III-B]
+LEARNING_RATE = 0.01               # Adam, one rate per run (Fig. 15: 0.001 ... 0.02) [paper Table III, Fig. 15]
 TRAINING_EPOCHS = 480              # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
 L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                            [choice A14]
 # Truncated BPTT of KalmanNet4SensorFusion (fusion_trainer.py): sequences of SEQUENCE_LENGTH fusion epochs, each from
@@ -153,9 +153,11 @@ SEQUENCE_LENGTH = 100              # fusion epochs per training sequence (their 
 TBPTT_WINDOW = 10                  # fusion epochs per Adam step (their slide_win_size)
 LSTM_DETACH_STEP = 5               # LSTM state detached every d fusion epochs (their detach_step)
 TBPTT_BATCH_SIZE = None            # sequences per batch, in lockstep; None = all (their batch_size 256 > ~90 sequences)
-# Labels of the loss Eq. (30): position, velocity and attitude of the post-processed truth. Each error is divided by
-# its scale (m, m/s, rad) so the three count alike; float('inf') leaves one out (paper: position only)  [choice A28]
-LOSS_SCALES = (1.0, 0.1, np.deg2rad(0.1))   # position [m], velocity [m/s], attitude [rad]
+# Labels of the loss Eq. (30): 'pva' = position, velocity and attitude of the post-processed truth, velocity and
+# attitude weighted by the errors of the traditional EKF (train.loss_weights) [choice A28]; 'p' = position only
+# [paper Sec. II-B, Fig. 8]
+LOSS = 'pva'
+OUTPUT_FOLDER = EXPERIMENT_FOLDER / LOSS / f'lr_{LEARNING_RATE:g}'    # outputs of this run
 
 # --- Fault detection and integrity (paper Sec. II-D, Fig. 20) ----------------
 FALSE_ALARM_PROBABILITY = 1e-3     # alpha of the chi-square test                 [ref 33]

@@ -240,7 +240,7 @@ def state_difference(a: NavigationState, b: NavigationState):
 def truth_state(data, k) -> NavigationState:
     """Post-processed truth at fusion epoch k, zero biases (the truth has no biases; A7).
 
-    Used as the initial state and its position, velocity and attitude as the labels of the loss (A28).
+    Used as the initial state and as the labels of the loss: position, with LOSS = 'pva' also velocity and attitude (A28).
     """
     return NavigationState(data.truth_position[k], data.truth_velocity[k], data.truth_attitude[k],
                            np.zeros(3), np.zeros(3))
@@ -284,6 +284,10 @@ class MaskedCLANetwork(nn.Module):
         self.fc_output = nn.Linear(cfg.FC_HIDDEN_UNITS, STATE_SIZE * max_measurements)
         nn.init.zeros_(self.fc_output.weight)            # K = 0 before training (A12)
         nn.init.zeros_(self.fc_output.bias)
+        # Weights of the errors in the loss Eq. (30): position only (LOSS = 'p', paper) or position, velocity and
+        # attitude (LOSS = 'pva', A28); set by train.py (train.loss_weights), kept with the model.
+        self.register_buffer('loss_weight', torch.ones(3 if cfg.LOSS == 'p' else 9, dtype=torch.float64))
+        self.register_buffer('gain_row_scale', torch.ones(STATE_SIZE))   # K = diag(scale) K_net, set by train.py (A28)
 
     def forward(self, features, valid_length, measurement_count, hidden=None):
         """features: padded X_k [D]; returns the Kalman gain [15, N_max] and the LSTM state (h, c)."""
@@ -314,7 +318,7 @@ class MaskedCLANetwork(nn.Module):
         # Masked FC: Kalman gain, columns j >= N_k are zero.
         gain = self.fc_output(F.relu(self.fc_hidden(context))).view(STATE_SIZE, self.max_measurements)
         column_mask = (torch.arange(self.max_measurements) < measurement_count).to(gain.dtype)
-        return gain * column_mask, hidden
+        return gain * column_mask * self.gain_row_scale.view(STATE_SIZE, 1), hidden
 
 
 # ===== Filter of paper Fig. 2, fault detection, integrity =============================================================
@@ -435,7 +439,6 @@ def filter_steps(data, measurements, network=None, first=0, last=None, fault_det
     state, P = truth_state(data, first), initial_covariance(data)
     i = np.searchsorted(data.imu_times, times[first], side='right') - 1            # last IMU sample <= start
     no_shift = torch.zeros(STATE_SIZE, dtype=torch.float64)
-    loss_scale = torch.tensor(np.repeat(cfg.LOSS_SCALES, 3))                       # A28
     previous = {'accel': data.accel[i], 'gyro': data.gyro[i], 'state': state, 'residuals': {}, 'shift': no_shift,
                 'state_residual': no_shift, 'state_innovation': no_shift}
     hidden, link, window_loss, window_epochs, loss_sum = None, no_shift, 0.0, 0, 0.0
@@ -481,8 +484,9 @@ def filter_steps(data, measurements, network=None, first=0, last=None, fault_det
 
         if network is not None:
             with torch.set_grad_enabled(training):
-                prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:9])
-                error = (prior_error - shift[:9] - dx_tensor[:9]) / loss_scale   # [p, v, theta]_k - (x_k,k-1 + K dy_k)
+                n = network.loss_weight.numel()           # 3: position (paper), 9: position, velocity, attitude (A28)
+                prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:n])
+                error = (prior_error - shift[:n] - dx_tensor[:n]) * network.loss_weight   # x_k - (x_k,k-1 + K dy_k)
                 loss = error @ error / error.numel()                      # MSE of Eq. (30), Table III
                 window_loss, window_epochs = window_loss + loss, window_epochs + 1
                 link = link + dx_tensor
@@ -520,7 +524,7 @@ def filter_steps(data, measurements, network=None, first=0, last=None, fault_det
         antenna, truth = state.position + state.attitude @ data.lever_arm, data.truth_antenna_position[k]
         rows.append((times[k], ecef_to_ned_matrix(*ecef_to_llh(truth)[:2]) @ (antenna - truth),
                      *(protection_levels(P, state, data.lever_arm) if covariance else (np.nan, np.nan)), count,
-                     faulty_satellite))
+                     faulty_satellite, state_difference(truth_state(data, k), state)[:9]))
 
     ned_error = np.array([r[1] for r in rows])
     return {
@@ -531,6 +535,7 @@ def filter_steps(data, measurements, network=None, first=0, last=None, fault_det
         'vertical_pl': np.array([r[3] for r in rows]),
         'measurement_count': np.array([r[4] for r in rows]),
         'faulty_satellite': [r[5] for r in rows],
+        'state_error': np.array([r[6] for r in rows]),                  # truth - estimate [dp, dv, dtheta], IMU, ECEF
         'loss': loss_sum,                                                # Eq. (30) mean (network only)
         'gain_row_rms': np.sqrt(gain_square_sum / max(gain_columns, 1)),
     }

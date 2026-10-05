@@ -16,15 +16,22 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 ## Training experiments (branches `exp/...`)
 
 Each branch is one training setup (`settings.EXPERIMENT`); its outputs go to their own folder (see Run).
-`main` trains as the paper says (the setup of `exp/paper`, merged into `main`): Data01 trains the network
-(no early stopping), single-step gradient of Eq. (31) (filter and LSTM state detached every epoch), alternating
-optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
-gain scale. Not as the paper (A28): the loss Eq. (30) has the position, velocity and attitude of the truth as labels,
-each error divided by its scale `settings.LOSS_SCALES` (the paper: position only). Added on every branch (docs/ASSUMPTIONS.md A21; the paper has no validation): the last 20 % of the
+`main` trains as the paper says: Data01 trains the network (no early stopping), single-step gradient of Eq. (31)
+(filter and LSTM state detached every epoch), alternating optimization [15], Adam for 480 epochs (Fig. 15), no
+gradient clipping and no gain scale of the position rows (A11). Two settings of every run, on every branch:
+- `LOSS`, the labels of the loss Eq. (30): `'pva'` (default, docs/ASSUMPTIONS.md A28) the position, velocity and
+  attitude of the truth, velocity and attitude weighted by sigma_p / sigma_v and sigma_p / sigma_theta (RMS errors of
+  the traditional EKF on the training part); `'p'` the position only, as the paper. In both, the gain rows of
+  the velocity, attitude and biases are scaled by g_block / g_p (EKF gain rows; without it Adam drives the rows
+  that get a gradient far out of their range). With the single-step gradient of `main` and `'p'` those rows get
+  no gradient and stay 0, so `'p'` is exactly the paper.
+- `LEARNING_RATE`: 0.01 of Table III by default; Fig. 15 compares 0.001, 0.003, 0.005, 0.01, 0.02.
+
+Added on every branch (docs/ASSUMPTIONS.md A21; the paper has no validation): the last 20 % of the
 fusion epochs of Data01 (`settings.VALIDATION_FRACTION`) are kept out of the training; after every epoch the network
 runs on them, and the model with the lowest validation loss is the one tested. Every `exp/...` branch is
-this training with one change: `exp/alternating` (joint instead of alternating optimization), `exp/grad-clip`,
-`exp/gain-scale`, `exp/lr-sweep` (the learning rates of Fig. 15), `exp/input-norm` (L2 or z-score),
+this training with one change: `exp/alternating` (joint instead of alternating optimization), `exp/gain-scale`,
+`exp/input-norm-grad-clip` (input normalization, L2 or z-score, and gradient clipping),
 `exp/bptt-kalmannet` (BPTT of KalmanNet [14]) and `exp/tbptt-sensorfusion` (truncated BPTT of
 KalmanNet4SensorFusion). Each branch describes its change in its README and docs/ASSUMPTIONS.md.
 
@@ -33,18 +40,19 @@ instead of one Adam step per pass. Data01 is divided into sequences of `SEQUENCE
 filtered from the truth, shuffled every epoch and run in lockstep (all in one batch, as their batch size 256 is larger
 than the ~90 sequences); after every window of `TBPTT_WINDOW` = 10 epochs one Adam step follows on the mean window
 loss and the filters go on. The filter state is detached every epoch (first-order Markov), the LSTM state every
-`LSTM_DETACH_STEP` = 5 epochs. The other settings (learning rate, gamma, no clipping, alternation) are those of
-`exp/paper`; as there, only the position rows of K are trained.
+`LSTM_DETACH_STEP` = 5 epochs. The other settings (loss, learning rate, gamma, gain row scale, no clipping,
+alternation) are those of `main`; as there, the rows of K trained are those of the loss labels (position with
+`LOSS = 'p'`, also velocity and attitude with `'pva'`).
 
 ## Running the experiments (Colab / Kaggle)
 
 `run_experiments.ipynb` (the same on every branch) runs `main` or one `exp/...` branch: in Colab, File → Open notebook →
 GitHub → `elasphin/KF_Net`, any branch → `run_experiments.ipynb` (on Kaggle: upload it, attach the dataset,
-Internet on). Choose `BRANCH` and `MODE` in its first cell and run all cells: it clones the branch, sets the data and
+Internet on). Choose `BRANCH`, `MODE`, `LOSS` and `LEARNING_RATE` in its first cell and run all cells: it clones the branch, sets the data and
 epochs of the mode (`quick`: 1500 / 600 fusion epochs of training (its last 20 % for validation) / test and 3 epochs,
 to check that a branch runs; `screening`: 3000 / 1000 and 100 epochs, the same for all branches, to compare them; `full`: all data and 480 epochs, as the
-paper), runs `train.py`, `test.py` and `show_results.py` (for `exp/lr-sweep` with the learning rate `LEARNING_RATE` of its
-first cell, one rate per run) and compares every experiment of that mode. The outputs of a mode are in `KF_Net_outputs/<mode>/<experiment>`.
+paper), runs `train.py`, `test.py` and `show_results.py` with that loss and learning rate (one per run) and compares
+every experiment of that mode. The outputs of a run are in `KF_Net_outputs/<mode>/<experiment>/<loss>/lr_<rate>`.
 
 - **Resume** (`train.py`): after every epoch `train.py` keeps the whole training state in
   `training_state.pt`. If a session ends, running it again (all cells of the notebook) continues after the last
@@ -137,8 +145,8 @@ true orbit) and `test.py` runs it and the traditional EKF with every orbit of `L
 measurements and the same R: `'reference'` (upper bound), `'tle'` (SGP4 of the TLE available before the dataset) and,
 once `leo_pseudorange.network_orbit` is written, `'network'` (neural-network orbit prediction).
 
-The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`, the folder `EXPERIMENT` (e.g. `main`) inside
-`My Drive/KF_Net_outputs` in Colab (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next
+The `outputs/` files are written to `OUTPUT_FOLDER` of `settings.py`, the folder `<EXPERIMENT>/<LOSS>/lr_<LEARNING_RATE>`
+(e.g. `main/pva/lr_0.01`; the data cache in `<EXPERIMENT>/cache`) inside `My Drive/KF_Net_outputs` in Colab (kept after the runtime ends), `/kaggle/working/outputs` on Kaggle, `outputs/` next
 to the code on my computer.
 
 By default the datasets are used whole (`MAX_FUSION_EPOCHS = {'train': None, 'test': None}`, as in

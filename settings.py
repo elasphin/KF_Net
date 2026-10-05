@@ -153,6 +153,9 @@ SEQUENCE_LENGTH = 100              # fusion epochs per training sequence (their 
 TBPTT_WINDOW = 10                  # fusion epochs per Adam step (their slide_win_size)
 LSTM_DETACH_STEP = 5               # LSTM state detached every d fusion epochs (their detach_step)
 TBPTT_BATCH_SIZE = None            # sequences per batch, in lockstep; None = all (their batch_size 256 > ~90 sequences)
+# Labels of the loss Eq. (30): position, velocity and attitude of the post-processed truth. Each error is divided by
+# its scale (m, m/s, rad) so the three count alike; float('inf') leaves one out (paper: position only)  [choice A28]
+LOSS_SCALES = (1.0, 0.1, np.deg2rad(0.1))   # position [m], velocity [m/s], attitude [rad]
 
 # --- Fault detection and integrity (paper Sec. II-D, Fig. 20) ----------------
 FALSE_ALARM_PROBABILITY = 1e-3     # alpha of the chi-square test                 [ref 33]

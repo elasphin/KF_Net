@@ -4,19 +4,24 @@
                          outputs/masked_cla_network_last.pt (model after the last epoch),
                          outputs/training_history.json, outputs/training_info.json
     python train.py --restart   (a new training even if a saved one exists)
+    (outputs = settings.OUTPUT_FOLDER: OUTPUT_ROOT/<experiment>/<loss>/lr_<rate>)
 
 An interrupted training continues after its last epoch when train.py runs again with the same
 settings, code and data (train.py, outputs/training_state.pt).
 
-Training of exp/paper with one change (branch exp/gain-scale): the network gain is scaled per row,
+Training of main with one change (branch exp/gain-scale): the network gain is scaled per row,
 K = diag(g) K_net, g_i = RMS of row i of the traditional EKF gain on the training part (A11).
 As on every branch, a validation part is added (A21).
-Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position, velocity and attitude of the post-processed truth
-(A28; the paper uses the position only), each error divided by its scale settings.LOSS_SCALES,
-averaged over the epochs and the nine components (MSE, Table III) plus
-gamma ||Theta||^2 (Eq. (32)); single-step gradient of Eq. (31): the filter state and the
-LSTM state are detached at every fusion epoch (settings.BACKPROP_WINDOW = 1).
-Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15).
+Loss: paper Eq. (30) ||x_k - x_hat_k||^2 with the post-processed truth as labels, averaged over the epochs and
+the components (MSE, Table III), plus gamma ||Theta||^2 (Eq. (32)). settings.LOSS = 'p': the three position
+components, as the paper (Sec. II-B: "postprocessing position results as training labels", Fig. 8: truth
+trajectory); 'pva' (A28): the position, velocity and attitude, velocity and attitude weighted by
+sigma_p / sigma_v and sigma_p / sigma_theta (RMS errors of the traditional EKF on the training part,
+loss_weights), so that the loss stays in m^2 and its position part is that of the paper; every row of the
+gain is scaled by the EKF (A11, gain_row_scale; this replaces main's scale relative to the position rows).
+Single-step gradient of Eq. (31): the filter state and the LSTM state are detached at every fusion epoch
+(settings.BACKPROP_WINDOW = 1). Adam with the learning rate settings.LEARNING_RATE (0.01 in Table III; one
+rate per run, Fig. 15) for 480 epochs (Fig. 15).
 Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
 epoch the filter part theta (LSTM, attention, FC) is updated with the encoder
 psi (masked CNN) frozen, then psi is updated with theta frozen; one Adam step
@@ -149,6 +154,23 @@ def validation_start(data):
     return start
 
 
+def loss_weights(classical):
+    """Weights of the errors in the loss Eq. (30) (A28): 1 for the position (paper); with LOSS = 'pva'
+    sigma_p / sigma_v for the velocity and sigma_p / sigma_theta for the attitude, sigma = RMS error of the
+    traditional EKF 'classical' on the training part, one per block (the ECEF axes have no meaning of their own)."""
+    if cfg.LOSS == 'p':
+        return np.ones(3)
+    sigma = np.sqrt(np.mean(classical['state_error'].reshape(-1, 3, 3) ** 2, axis=(0, 2)))   # p [m], v [m/s], theta [rad]
+    return np.repeat(sigma[0] / sigma, 3)
+
+
+def gain_row_scale(classical):
+    """Output scale of the gain rows, K = diag(g) K_net (branch exp/gain-scale, A11): g_i = RMS of row i of the
+    traditional EKF gain 'classical' on the training part, for every row (main scales the rows relative to the
+    position rows, A28)."""
+    return np.maximum(classical['gain_row_rms'], 1e-12)
+
+
 def training_step(network, optimizer, parameters, data, measurements, last):
     """One pass over the training part (fusion epochs 0..last) that updates only 'parameters' (the others are
     frozen)."""
@@ -172,10 +194,10 @@ def main():
     split, last = validation_start(data), len(data.fusion_times) - 1  # training 0..split, validation split..last (A21)
     max_measurements = max(len(m) for m in measurements[:split + 1])  # N_max of Eq. (16), training part only
 
-    # Output scale of the gain rows from a traditional EKF on the training part (A11).
-    classical = run_filter(data, measurements, last=split, fault_detection=False)
+    classical = run_filter(data, measurements, last=split, fault_detection=False)  # traditional EKF: comparison, A28
     network = MaskedCLANetwork(max_measurements)
-    network.gain_row_scale.copy_(torch.tensor(np.maximum(classical['gain_row_rms'], 1e-12)))
+    network.loss_weight.copy_(torch.from_numpy(loss_weights(classical)))
+    network.gain_row_scale.copy_(torch.from_numpy(gain_row_scale(classical)))
     encoder = [network.conv.weight, network.conv_bias]                  # psi of Ref. [15]: masked CNN
     filter_part = [p for p in network.parameters() if not any(p is q for q in encoder)]   # theta: LSTM, attention, FC
     encoder_optimizer = torch.optim.Adam(encoder, lr=cfg.LEARNING_RATE)
@@ -187,6 +209,8 @@ def main():
         'validation_dataset': data.name, 'validation_fraction': cfg.VALIDATION_FRACTION,
         'validation_samples': last - split, 'validation_fusion_epochs': f'{split}..{last}',
         'model_selection': 'lowest validation loss (A21)',
+        'loss': cfg.LOSS, 'loss_weights_p_v_theta': network.loss_weight[::3].tolist(),
+        'gain_row_scale_p_v_theta_ba_bg': network.gain_row_scale[::3].tolist(),
         'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS, 'l2_weight': cfg.L2_WEIGHT,
         'backprop_window': cfg.BACKPROP_WINDOW, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
         'max_measurements': max_measurements, 'input_size': FIXED_FEATURE_SIZE + 2 * max_measurements,

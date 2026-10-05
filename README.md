@@ -11,7 +11,9 @@ network. Fault detection and DIA adaptation run on the INS-predicted innovation.
 
 What follows the paper exactly, what was removed, and every assumption the paper leaves open (with the
 alternatives to choose from) are listed in [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md). Each value in `settings.py` is
-tagged `[paper]`, `[ref N]` or `[choice AX]`.
+tagged `[paper]`, `[ref N]` or `[choice AX]`. An audit of the GNSS processing from the RINEX file to the network
+input, step by step against the paper with the sources of everything the paper does not give, and a report of the
+network implementation are in [docs/GNSS_PIPELINE_AUDIT.md](docs/GNSS_PIPELINE_AUDIT.md).
 
 ## Training experiments (branches `exp/...`)
 

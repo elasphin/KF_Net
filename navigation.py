@@ -397,7 +397,8 @@ class MaskedCLANetwork(nn.Module):
 
 
 # ===== Filter of paper Fig. 2, fault detection, integrity =============================================================
-PARALLEL_TOLERANCE = 1e-9     # relative: c_i parallel to an identified fault, or already explained by it
+PARALLEL_TOLERANCE = 1e-6     # relative: c_i parallel to an identified fault, or already explained by it (above the
+                              # rounding of M, ~1e-8, so an explained row cannot be identified again)
 
 
 # --- Fault detection and integrity (paper Sec. II-D, Ref. [33]) --------------
@@ -408,8 +409,10 @@ def find_faults(innovation, H, R, P_prior, projector):
     with M = Q^+ (I - C C^+) the metric after the q faults already found (columns of C, C^+ of
     Ref. [33] Eq. (39)); M = Q^+ when q = 0. Ref. [33] Eq. (7): the next fault is the row with the
     largest T_i = (c_i^T M nu)^2 / (c_i^T M c_i), c_i = projector column i (pseudorange fault seen in
-    the clock-free innovation). Rows with c_i parallel to that of the identified row are the same
-    hypothesis of Ref. [33] (two rows of one GNSS system) and are named with it.
+    the clock-free innovation), among the rows not yet identified and not already explained by the faults
+    found (c_i^T M c_i > PARALLEL_TOLERANCE c_i^T Q^+ c_i); the search stops when no such row is left. Rows
+    with c_i parallel to that of the identified row are the same hypothesis of Ref. [33] (two rows of one
+    GNSS system) and are named with it.
     Returns (identified rows, [rows of each identified hypothesis], Q^+).
     """
     Q = H @ P_prior @ H.T + R
@@ -426,6 +429,9 @@ def find_faults(innovation, H, R, P_prior, projector):
             break
         norm = np.einsum('ji,jk,ki->i', c, M, c)
         testable = norm > PARALLEL_TOLERANCE * norm_without_faults        # not yet explained by the faults found
+        testable[faulty] = False
+        if not testable.any():                                             # no row can explain the rest
+            break
         T = np.where(testable, (c.T @ M @ innovation) ** 2 / np.where(testable, norm, 1.0), -np.inf)
         index = int(np.argmax(T))
         parallel = (c.T @ M @ c[:, index]) ** 2 >= (1.0 - PARALLEL_TOLERANCE) * norm * norm[index]

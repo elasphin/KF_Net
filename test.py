@@ -3,6 +3,7 @@
 The network tested is the model of the best validation loss (train.py, A21).
 
     python test.py   ->  outputs/test_summary.json, outputs/test_epochs.csv   (plots: show_results.py)
+    (outputs = settings.OUTPUT_FOLDER: OUTPUT_ROOT/<experiment>/<loss>/lr_<rate>)
 
 The network trained once (LEO_TRAIN_ORBIT) is tested with every LEO filter orbit of
 settings.LEO_TEST_ORBITS on the same measurements and the same R (A26): the true orbit

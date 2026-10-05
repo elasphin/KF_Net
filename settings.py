@@ -150,6 +150,9 @@ BACKPROP_WINDOW = None             # no truncation inside a sub-trajectory: full
 SUBTRAJECTORY_LENGTHS = (100, 1000)  # T of the V2 warm-up, then of the fine-tuning (instead of V1: memory) [ref 14]
 WARMUP_EPOCHS = 400                # epochs with the first T; the rest of TRAINING_EPOCHS with the second
 BPTT_BATCH_SIZE = 10               # sub-trajectories per Adam step, M of Ref. [14] Eq. (14)           [ref 14]
+# Labels of the loss Eq. (30): position, velocity and attitude of the post-processed truth. Each error is divided by
+# its scale (m, m/s, rad) so the three count alike; float('inf') leaves one out (paper: position only)  [choice A28]
+LOSS_SCALES = (1.0, 0.1, np.deg2rad(0.1))   # position [m], velocity [m/s], attitude [rad]
 
 # --- Fault detection and integrity (paper Sec. II-D, Fig. 20) ----------------
 FALSE_ALARM_PROBABILITY = 1e-3     # alpha of the chi-square test                 [ref 33]

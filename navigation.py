@@ -240,7 +240,7 @@ def state_difference(a: NavigationState, b: NavigationState):
 def truth_state(data, k) -> NavigationState:
     """Post-processed truth at fusion epoch k, zero biases (the truth has no biases; A7).
 
-    Used as the initial state and its position as the label of the loss.
+    Used as the initial state and its position, velocity and attitude as the labels of the loss (A28).
     """
     return NavigationState(data.truth_position[k], data.truth_velocity[k], data.truth_attitude[k],
                            np.zeros(3), np.zeros(3))
@@ -418,6 +418,7 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
     state, P = truth_state(data, first), initial_covariance(data)
     i = np.searchsorted(data.imu_times, times[first], side='right') - 1            # last IMU sample <= start
     no_shift = torch.zeros(STATE_SIZE, dtype=torch.float64)
+    loss_scale = torch.tensor(np.repeat(cfg.LOSS_SCALES, 3))                       # A28
     previous = {'accel': data.accel[i], 'gyro': data.gyro[i], 'state': state, 'residuals': {}, 'shift': no_shift,
                 'state_residual': no_shift, 'state_innovation': no_shift}
     hidden, link, window_loss, loss_sum = None, no_shift, 0.0, 0.0
@@ -463,8 +464,8 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
 
         if network is not None:
             with torch.set_grad_enabled(training):
-                prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:3])
-                error = prior_error - shift[:3] - dx_tensor[:3]           # p_k - (p_k,k-1 + K dy_k)
+                prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:9])
+                error = (prior_error - shift[:9] - dx_tensor[:9]) / loss_scale   # [p, v, theta]_k - (x_k,k-1 + K dy_k)
                 loss = error @ error / (error.numel() * (last - first))   # MSE of Eq. (30), Table III
                 window_loss = window_loss + loss
                 link = link + dx_tensor

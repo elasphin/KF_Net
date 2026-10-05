@@ -15,9 +15,9 @@ the components (MSE, Table III), plus gamma ||Theta||^2 (Eq. (32)). settings.LOS
 components, as the paper (Sec. II-B: "postprocessing position results as training labels", Fig. 8: truth
 trajectory); 'pva' (A28): the position, velocity and attitude, velocity and attitude weighted by
 sigma_p / sigma_v and sigma_p / sigma_theta (RMS errors of the traditional EKF on the training part,
-loss_weights), so that the loss stays in m^2 and its position part is that of the paper; the velocity and
-attitude rows of the gain are scaled by g_v / g_p and g_theta / g_p (EKF gain rows, gain_row_scale), as Adam
-changes every output by about the same step.
+loss_weights), so that the loss stays in m^2 and its position part is that of the paper. The gain rows of
+the velocity, attitude and biases are scaled by g_block / g_p (EKF gain rows, gain_row_scale), as Adam
+changes every output by about the same step; rows without gradient stay 0 (with 'p': all but the position).
 Single-step gradient of Eq. (31): the filter state and the LSTM state are detached at every fusion epoch
 (settings.BACKPROP_WINDOW = 1). Adam with the learning rate settings.LEARNING_RATE (0.01 in Table III; one
 rate per run, Fig. 15) for 480 epochs (Fig. 15).
@@ -164,13 +164,13 @@ def loss_weights(classical):
 
 
 def gain_row_scale(classical):
-    """Output scale of the gain rows, K = diag(scale) K_net (A28): g_v / g_p for the velocity rows and g_theta / g_p for
-    the attitude rows, g = RMS of the rows of the traditional EKF gain 'classical' on the training part (one per
-    block), so that these rows change in their own range (rad/m, not m/m); 1 for the position rows (paper) and the
-    bias rows (no label: they stay 0). With LOSS = 'p' the velocity and attitude rows stay 0, so the scale has no
-    effect there."""
-    g = np.sqrt(np.mean(classical['gain_row_rms'][:9].reshape(3, 3) ** 2, axis=1))   # p, v, theta
-    return np.concatenate([np.repeat(g / g[0], 3), np.ones(6)])
+    """Output scale of the gain rows, K = diag(scale) K_net (A28): g_block / g_p for the velocity, attitude,
+    accelerometer bias and gyro bias rows, 1 for the position rows (paper), g = RMS of the rows of the traditional
+    EKF gain 'classical' on the training part (one per block), so that every row changes in its own range (rad/m,
+    not m/m), as Adam changes every output by about the same step. Rows without gradient stay 0 whatever their
+    scale: with the single-step gradient of Eq. (31) and LOSS = 'p' only the position rows are trained."""
+    g = np.sqrt(np.mean(classical['gain_row_rms'].reshape(5, 3) ** 2, axis=1))   # p, v, theta, b_a, b_g
+    return np.repeat(g / g[0], 3)
 
 
 def training_step(network, optimizer, parameters, data, measurements, last):

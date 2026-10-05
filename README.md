@@ -21,9 +21,10 @@ Each branch is one training setup (`settings.EXPERIMENT`); its outputs go to the
 gradient clipping and no gain scale of the position rows (A11). Two settings of every run, on every branch:
 - `LOSS`, the labels of the loss Eq. (30): `'pva'` (default, docs/ASSUMPTIONS.md A28) the position, velocity and
   attitude of the truth, velocity and attitude weighted by sigma_p / sigma_v and sigma_p / sigma_theta (RMS errors of
-  the traditional EKF on the training part), and the velocity and attitude rows of the gain scaled by
-  g_v / g_p and g_theta / g_p (EKF gain rows; without it Adam drives them far out of their range); `'p'` the
-  position only, as the paper.
+  the traditional EKF on the training part); `'p'` the position only, as the paper. In both, the gain rows of
+  the velocity, attitude and biases are scaled by g_block / g_p (EKF gain rows; without it Adam drives the rows
+  that get a gradient far out of their range). With the single-step gradient of `main` and `'p'` those rows get
+  no gradient and stay 0, so `'p'` is exactly the paper.
 - `LEARNING_RATE`: 0.01 of Table III by default; Fig. 15 compares 0.001, 0.003, 0.005, 0.01, 0.02.
 
 Added on every branch (docs/ASSUMPTIONS.md A21; the paper has no validation): the last 20 % of the

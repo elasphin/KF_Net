@@ -212,7 +212,7 @@ def main():
         'validation_samples': last - split, 'validation_fusion_epochs': f'{split}..{last}',
         'model_selection': 'lowest validation loss (A21)',
         'loss': cfg.LOSS, 'loss_weights_p_v_theta': network.loss_weight[::3].tolist(),
-        'gain_row_scale_p_v_theta': network.gain_row_scale[:9:3].tolist(),
+        'gain_row_scale_p_v_theta_ba_bg': network.gain_row_scale[::3].tolist(),
         'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS, 'l2_weight': cfg.L2_WEIGHT,
         'backprop_window': cfg.BACKPROP_WINDOW, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
         'max_measurements': max_measurements, 'input_size': FIXED_FEATURE_SIZE + 2 * max_measurements,

@@ -1,6 +1,6 @@
 """Show the training and test results as the paper does, plus a table of the run settings.
 
-    python show_results.py   (after train.py and test.py)
+    python show_results.py   (after train.py and test.py; outputs = settings.OUTPUT_FOLDER of this run)
 
     outputs/results_training.png          training and validation loss and position RMSE per epoch (cf. paper
                                           Fig. 15; validation: A21) and the table
@@ -16,7 +16,7 @@ Reads outputs/training_info.json, training_history.json, test_summary.json, test
     python show_results.py compare   ->  OUTPUT_ROOT/comparison.txt (also printed), OUTPUT_ROOT/comparison.png
 
 Comparison of the training experiments (branches exp/...) found in settings.OUTPUT_ROOT. An experiment is a
-folder with training_info.json: OUTPUT_ROOT/<experiment> (and lr-sweep/lr_<rate>). Table: training and
+folder with training_info.json: OUTPUT_ROOT/<experiment>/<loss>/lr_<rate>. Table: training and
 validation samples and epochs (the experiments are comparable only if these are the same: a warning is printed
 otherwise), final training RMSE, epoch and validation RMSE of the tested model (best validation loss, A21) and,
 for each LEO orbit of the test, the 3-D RMSE of the network and of the EKF on the
@@ -53,9 +53,9 @@ import settings as cfg
 
 
 def find_experiments(root):
-    """{name: folder} of every experiment under root, main (training as the paper) first."""
+    """{name: folder} of every experiment under root (name: <experiment>/<loss>/lr_<rate>), main first."""
     folders = {path.parent.relative_to(root).as_posix(): path.parent for path in root.rglob('training_info.json')}
-    return dict(sorted(folders.items(), key=lambda item: (item[0] not in ('main', 'paper'), item[0] != 'main', item[0])))
+    return dict(sorted(folders.items(), key=lambda item: (not item[0].startswith('main/'), item[0])))
 
 
 def read_experiment(folder):
@@ -216,6 +216,8 @@ lines = [
     '  layers', *[f'    {layer}' for layer in info['network'].split(' -> ')],
     f"  trainable parameters        {info['trainable_parameters']:,}",
     'TRAINING',
+    f"  loss labels (A28)           {info.get('loss', 'p')}, weights p / v / theta "
+    f"{' / '.join(f'{w:.3g}' for w in info.get('loss_weights_p_v_theta', [1.0]))}",
     f"  learning rate               {info['learning_rate']}",
     f"  optimization                {info['optimization']}",
     f"  epochs run / max            {info['epochs_run']} / {info['max_epochs']}",

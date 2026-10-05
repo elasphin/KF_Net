@@ -14,7 +14,8 @@ alternatives to choose from) are listed in [docs/ASSUMPTIONS.md](docs/ASSUMPTION
 tagged `[paper]`, `[ref N]` or `[choice AX]`. An audit of the GNSS processing from the RINEX file to the network
 input, step by step against the paper with the sources of everything the paper does not give, and a report of the
 network implementation are in [docs/GNSS_PIPELINE_AUDIT.md](docs/GNSS_PIPELINE_AUDIT.md); the same audit of the LEO processing
-(TLE files, orbits, pseudorange simulation, filter and network input) is in [docs/LEO_PIPELINE_AUDIT.md](docs/LEO_PIPELINE_AUDIT.md).
+(TLE files, orbits, pseudorange simulation, filter and network input) is in [docs/LEO_PIPELINE_AUDIT.md](docs/LEO_PIPELINE_AUDIT.md), and that of the INS processing (IMU
+reading, mechanization, error model, correction and network input) in [docs/INS_PIPELINE_AUDIT.md](docs/INS_PIPELINE_AUDIT.md).
 
 ## Training experiments (branches `exp/...`)
 

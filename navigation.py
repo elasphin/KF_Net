@@ -240,7 +240,7 @@ def state_difference(a: NavigationState, b: NavigationState):
 def truth_state(data, k) -> NavigationState:
     """Post-processed truth at fusion epoch k, zero biases (the truth has no biases; A7).
 
-    Used as the initial state and its position, velocity and attitude as the labels of the loss (A28).
+    Used as the initial state and as the labels of the loss: position, with LOSS = 'pva' also velocity and attitude (A28).
     """
     return NavigationState(data.truth_position[k], data.truth_velocity[k], data.truth_attitude[k],
                            np.zeros(3), np.zeros(3))
@@ -269,7 +269,7 @@ def network_input_values(previous, sat_ids, innovation, accel, gyro):
 
 
 def build_network_input(previous, sat_ids, innovation, accel, gyro, max_measurements, normalization=None):
-    """Paper Eq. (15)-(16): X_k, normalized (exp/input-norm), followed by zero padding.
+    """Paper Eq. (15)-(16): X_k, normalized (exp/input-norm-grad-clip), followed by zero padding.
 
     Returns the padded vector (tensor, length 36 + 2 N_max) and the number of valid entries (mask, Eq. (17)).
     """
@@ -284,7 +284,7 @@ FEATURE_GROUPS = ((0, 3), (3, 6), (6, 6 + STATE_SIZE), (6 + STATE_SIZE, FIXED_FE
 
 
 class InputNormalization(nn.Module):
-    """Normalization of the network input X_k (branch exp/input-norm, settings.INPUT_NORMALIZATION).
+    """Normalization of the network input X_k (branch exp/input-norm-grad-clip, settings.INPUT_NORMALIZATION).
 
     'l2': each of the six groups d_alpha, d_w, dx_hat, dx_tilde, dy, dy_tilde divided by its L2 norm
           (as the input features of KalmanNet [14] and KalmanNet4SensorFusion, F.normalize, eps 1e-12).
@@ -359,6 +359,10 @@ class MaskedCLANetwork(nn.Module):
         nn.init.zeros_(self.fc_output.weight)            # K = 0 before training (A12)
         nn.init.zeros_(self.fc_output.bias)
         self.input_normalization = InputNormalization()
+        # Weights of the errors in the loss Eq. (30): position only (LOSS = 'p', paper) or position, velocity and
+        # attitude (LOSS = 'pva', A28); set by train.py (train.loss_weights), kept with the model.
+        self.register_buffer('loss_weight', torch.ones(3 if cfg.LOSS == 'p' else 9, dtype=torch.float64))
+        self.register_buffer('gain_row_scale', torch.ones(STATE_SIZE))   # K = diag(scale) K_net, set by train.py (A28)
 
     def forward(self, features, valid_length, measurement_count, hidden=None):
         """features: padded X_k [D]; returns the Kalman gain [15, N_max] and the LSTM state (h, c)."""
@@ -389,7 +393,7 @@ class MaskedCLANetwork(nn.Module):
         # Masked FC: Kalman gain, columns j >= N_k are zero.
         gain = self.fc_output(F.relu(self.fc_hidden(context))).view(STATE_SIZE, self.max_measurements)
         column_mask = (torch.arange(self.max_measurements) < measurement_count).to(gain.dtype)
-        return gain * column_mask, hidden
+        return gain * column_mask * self.gain_row_scale.view(STATE_SIZE, 1), hidden
 
 
 # ===== Filter of paper Fig. 2, fault detection, integrity =============================================================
@@ -478,7 +482,7 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
 
     network=None: traditional EKF gain, with at most max_measurements rows (A16). With a list input_samples, it
     appends the network input X_k of every epoch with a measurement as (X_k, present, sat_ids)
-    (navigation.network_input_values), for the input normalization statistics (exp/input-norm).
+    (navigation.network_input_values), for the input normalization statistics (exp/input-norm-grad-clip).
     training=True: accumulates the gradient of the Eq. (32) loss (A15). The filter runs in NumPy; the gradient
     follows its linearization: 'link' is the shift of the prior state caused by the earlier corrections
     (a correction at k shifts the prior at k+1 by Phi dx_k), the innovation shifts by -H link, so
@@ -495,7 +499,6 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
     state, P = truth_state(data, first), initial_covariance(data)
     i = np.searchsorted(data.imu_times, times[first], side='right') - 1            # last IMU sample <= start
     no_shift = torch.zeros(STATE_SIZE, dtype=torch.float64)
-    loss_scale = torch.tensor(np.repeat(cfg.LOSS_SCALES, 3))                       # A28
     previous = {'accel': data.accel[i], 'gyro': data.gyro[i], 'state': state, 'residuals': {}, 'shift': no_shift,
                 'state_residual': no_shift, 'state_innovation': no_shift}
     hidden, link, window_loss, loss_sum = None, no_shift, 0.0, 0.0
@@ -545,8 +548,9 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
 
         if network is not None:
             with torch.set_grad_enabled(training):
-                prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:9])
-                error = (prior_error - shift[:9] - dx_tensor[:9]) / loss_scale   # [p, v, theta]_k - (x_k,k-1 + K dy_k)
+                n = network.loss_weight.numel()           # 3: position (paper), 9: position, velocity, attitude (A28)
+                prior_error = torch.from_numpy(state_difference(truth_state(data, k), state)[:n])
+                error = (prior_error - shift[:n] - dx_tensor[:n]) * network.loss_weight   # x_k - (x_k,k-1 + K dy_k)
                 loss = error @ error / (error.numel() * (last - first))   # MSE of Eq. (30), Table III
                 window_loss = window_loss + loss
                 link = link + dx_tensor
@@ -578,7 +582,7 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
         antenna, truth = state.position + state.attitude @ data.lever_arm, data.truth_antenna_position[k]
         rows.append((times[k], ecef_to_ned_matrix(*ecef_to_llh(truth)[:2]) @ (antenna - truth),
                      *(protection_levels(P, state, data.lever_arm) if covariance else (np.nan, np.nan)), count,
-                     faulty_satellite))
+                     faulty_satellite, state_difference(truth_state(data, k), state)[:9]))
 
     ned_error = np.array([r[1] for r in rows])
     return {
@@ -589,6 +593,7 @@ def run_filter(data, measurements, network=None, first=0, last=None, fault_detec
         'vertical_pl': np.array([r[3] for r in rows]),
         'measurement_count': np.array([r[4] for r in rows]),
         'faulty_satellite': [r[5] for r in rows],
+        'state_error': np.array([r[6] for r in rows]),                  # truth - estimate [dp, dv, dtheta], IMU, ECEF
         'loss': loss_sum,                                                # Eq. (30) mean (network only)
         'gain_row_rms': np.sqrt(gain_square_sum / max(gain_columns, 1)),
     }

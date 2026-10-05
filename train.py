@@ -12,9 +12,9 @@ Training of exp/paper with one change (branch exp/input-norm): the network input
 settings.INPUT_NORMALIZATION = 'l2' (each feature group to unit norm, as KalmanNet) or 'zscore' (mean and
 std of the features of a traditional EKF run on the training part; navigation.InputNormalization).
 As on every branch, a validation part is added (A21).
-Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position only (paper Sec. II-B:
-"postprocessing position results as training labels", Fig. 8: truth trajectory),
-averaged over the epochs and the three components (MSE, Table III) plus
+Loss: paper Eq. (30) ||x_k - x_hat_k||^2 on the position, velocity and attitude of the post-processed truth
+(A28; the paper uses the position only), each error divided by its scale settings.LOSS_SCALES,
+averaged over the epochs and the nine components (MSE, Table III) plus
 gamma ||Theta||^2 (Eq. (32)); single-step gradient of Eq. (31): the filter state and the
 LSTM state are detached at every fusion epoch (settings.BACKPROP_WINDOW = 1).
 Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15).

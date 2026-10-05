@@ -19,7 +19,8 @@ Each branch is one training setup (`settings.EXPERIMENT`); its outputs go to the
 `main` trains as the paper says (the setup of `exp/paper`, merged into `main`): Data01 trains the network
 (no early stopping), single-step gradient of Eq. (31) (filter and LSTM state detached every epoch), alternating
 optimization [15], Adam with learning rate 0.01 (Table III) for 480 epochs (Fig. 15), no gradient clipping and no
-gain scale. Added on every branch (docs/ASSUMPTIONS.md A21; the paper has no validation): the last 20 % of the
+gain scale. Not as the paper (A28): the loss Eq. (30) has the position, velocity and attitude of the truth as labels,
+each error divided by its scale `settings.LOSS_SCALES` (the paper: position only). Added on every branch (docs/ASSUMPTIONS.md A21; the paper has no validation): the last 20 % of the
 fusion epochs of Data01 (`settings.VALIDATION_FRACTION`) are kept out of the training; after every epoch the network
 runs on them, and the model with the lowest validation loss is the one tested. Every `exp/...` branch is
 this training with one change: `exp/alternating` (joint instead of alternating optimization), `exp/grad-clip`,

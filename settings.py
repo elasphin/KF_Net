@@ -148,6 +148,9 @@ LEARNING_RATE = 0.01               # Adam                                       
 TRAINING_EPOCHS = 480              # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
 L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                            [choice A14]
 BACKPROP_WINDOW = 1                # single-step gradient of Eq. (31): state and LSTM state detached every epoch [paper Eq. (31)]
+# Labels of the loss Eq. (30): position, velocity and attitude of the post-processed truth. Each error is divided by
+# its scale (m, m/s, rad) so the three count alike; float('inf') leaves one out (paper: position only)  [choice A28]
+LOSS_SCALES = (1.0, 0.1, np.deg2rad(0.1))   # position [m], velocity [m/s], attitude [rad]
 
 # --- Fault detection and integrity (paper Sec. II-D, Fig. 20) ----------------
 FALSE_ALARM_PROBABILITY = 1e-3     # alpha of the chi-square test                 [ref 33]

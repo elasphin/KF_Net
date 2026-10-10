@@ -128,8 +128,10 @@ python train.py         # outputs/masked_cla_network.pt (model of the best valid
 python test.py          # outputs/test_summary.json, test_epochs.csv, leo_orbit_error_test.json (one entry per LEO orbit),
                         #         test_loss.json (loss and RMSE of the tested and the last model, as the validation)
 python check_dataset.py # optional: dataset reading checks and baselines (argument test for Data02)
-python show_results.py  # outputs/results_training.png, results_orbits.png, results_table.txt and, per LEO orbit,
-                        #         results_errors_<orbit>.png, results_cdf_<orbit>.png, results_stanford_<orbit>.png
+python show_results.py  # outputs/results_table.txt (the text report, only there) and one chart per file:
+                        #         results_loss.png, results_rmse.png, results_orbits.png and, per LEO orbit,
+                        #         results_trajectory_<orbit>.png, results_error_<axis>_<orbit>.png,
+                        #         results_cdf_<axis>_<orbit>.png, results_stanford_<method>_<direction>_<orbit>.png
 ```
 
 LEO orbit of the filter (docs/ASSUMPTIONS.md A26): the network is trained once with `LEO_TRAIN_ORBIT` (`'reference'`, the

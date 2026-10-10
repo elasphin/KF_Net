@@ -2,14 +2,19 @@
 
     python show_results.py   (after train.py and test.py; outputs = settings.OUTPUT_FOLDER of this run)
 
-    outputs/results_training.png          training and validation loss and position RMSE per epoch (cf. paper
-                                          Fig. 15; validation: A21) and the summary of the table
-    outputs/results_errors_<orbit>.png    2-D trajectory and north/east/down errors over time (Fig. 18)
-    outputs/results_cdf_<orbit>.png       CDF of the north/east/down errors (Fig. 19)
-    outputs/results_stanford_<orbit>.png  horizontal and vertical Stanford diagram of each method (Fig. 20)
-    outputs/results_orbits.png            CDF of the 3-D error of each method with every LEO filter orbit (A26)
-    outputs/results_table.txt             the table (also printed)
-<orbit> is each LEO filter orbit of the test (settings.LEO_TEST_ORBITS: reference, tle, network).
+    One chart per file, without the report text (that is only in results_table.txt):
+    outputs/results_loss.png                      training and validation loss per epoch (cf. paper Fig. 15;
+                                                  validation: A21)
+    outputs/results_rmse.png                      training and validation position RMSE per epoch
+    outputs/results_trajectory_<orbit>.png        2-D trajectory (Fig. 18(a))
+    outputs/results_error_<axis>_<orbit>.png      north, east or down error over time (Fig. 18(b))
+    outputs/results_cdf_<axis>_<orbit>.png        CDF of the north, east or down error (Fig. 19)
+    outputs/results_stanford_<method>_<direction>_<orbit>.png
+                                                  horizontal or vertical Stanford diagram of one method (Fig. 20)
+    outputs/results_orbits.png                    CDF of the 3-D error of each method with every LEO filter orbit (A26)
+    outputs/results_table.txt                     the text report (not printed, not in the figures)
+<orbit> is each LEO filter orbit of the test (settings.LEO_TEST_ORBITS: reference, tle, network), <axis> north, east
+or down, <method> masked_cla_kalmannet or traditional_ekf, <direction> horizontal or vertical.
 
 Table: samples of the training, validation and test; network architecture (layers, neurons, parameters, from
 the tested model masked_cla_network.pt); preprocessing used and not used; loss and position RMSE of train,
@@ -338,7 +343,7 @@ def results_lines():
     return lines
 
 
-summary_left = [
+lines = [
     'DATA (samples = fusion epochs, one per GNSS epoch)',
     f"  training samples            {info['training_samples']} ({info.get('dataset', '-')}, fusion epochs "
     f"{info.get('training_fusion_epochs', '-')})",
@@ -349,8 +354,6 @@ summary_left = [
     f"  max measurements N_max      {info['max_measurements']}",
     *architecture_lines(),
     *preprocessing_lines(),
-]
-summary_right = [
     'TRAINING',
     f"  loss labels (A28)           {info.get('loss', 'p')}",
     f"  learning rate               {info['learning_rate']}",
@@ -366,35 +369,37 @@ summary_right = [
       f"{test[orbit]['masked_cla_kalmannet']['epochs_with_leo_fault']:17d} / "
       f"{test[orbit]['traditional_ekf']['epochs_with_leo_fault']}"
       for orbit in orbits],
+    *[line for orbit in orbits for line in test_lines(orbit)],
 ]
-lines = [*summary_left, *summary_right, *[line for orbit in orbits for line in test_lines(orbit)]]
-table = '\n'.join(lines)
-print(table)
-(folder / 'results_table.txt').write_text(table + '\n')
+(folder / 'results_table.txt').write_text('\n'.join(lines) + '\n')     # the text report: only in this file
 
-# --- Training (cf. paper Fig. 15) and the summary of the table ---------------------------
+# ===== Figures: one chart per file, no report text ========================================
+saved = []
+
+
+def save(fig, name):
+    fig.tight_layout()
+    fig.savefig(folder / name, dpi=150)
+    plt.close(fig)
+    saved.append(name)
+
+
+# --- Training: loss and position RMSE per epoch (cf. paper Fig. 15) ---------------------
 epochs = [h['epoch'] for h in history]
-text_height = 0.16 * max(len(summary_left), len(summary_right))
-fig = plt.figure(figsize=(20, 7 + text_height))
-grid = fig.add_gridspec(2, 2, height_ratios=[7, text_height])
-axes = [fig.add_subplot(grid[0, 0]), fig.add_subplot(grid[0, 1])]
-for ax, key, label in ((axes[0], 'loss', 'Loss, Eq. (32)'), (axes[1], 'position_rmse_m', 'Position RMSE [m]')):
+for key, label, name in (('loss', 'Loss, Eq. (32)', 'results_loss.png'),
+                         ('position_rmse_m', 'Position RMSE [m]', 'results_rmse.png')):
+    fig, ax = plt.subplots(figsize=(9, 5.5))
     ax.plot(epochs, [h[f'train_{key}'] for h in history], color=TRAIN_COLOR, linewidth=2, label='train')
     if 'validation_loss' in history[0]:
         ax.plot(epochs, [h[f'validation_{key}'] for h in history], color=VALIDATION_COLOR, linewidth=2,
                 label='validation')
         ax.axvline(info['best_epoch'], color=VALIDATION_COLOR, linewidth=1, linestyle='--',
                    label=f"tested model (epoch {info['best_epoch']})")
-    ax.set(xlabel='Epoch', ylabel=label, title=label)
+    ax.set(xlabel='Epoch', ylabel=label, title=f'{label} per epoch')
+    if key == 'loss':
+        ax.set_yscale('log')
     finish(ax)
-axes[0].set_yscale('log')
-for column, text in enumerate((summary_left, summary_right)):
-    ax = fig.add_subplot(grid[1, column])
-    ax.axis('off')
-    ax.text(0.0, 1.0, '\n'.join(text), family='monospace', fontsize=8.5, va='top')
-fig.tight_layout()
-fig.savefig(folder / 'results_training.png', dpi=150)
-plt.close(fig)
+    save(fig, name)
 
 # --- Regions of the Stanford diagrams (cf. paper Fig. 20) --------------------------------
 al = cfg.ALERT_LIMIT
@@ -406,50 +411,46 @@ region_shapes = {                                   # (polygon, fill color, labe
     'SU&MI': ([(al, al), (limit, al), (limit, limit)], '#d03b3b', (1.2 * al, 1.08 * al)),
 }
 for orbit in orbits:
-    # --- Trajectory and errors over time (cf. paper Fig. 18) -------------------------------
-    fig, axes = plt.subplot_mosaic([['trajectory', 'North'], ['trajectory', 'East'], ['trajectory', 'Down']],
-                                   figsize=(16, 9))
+    # --- 2-D trajectory (cf. paper Fig. 18(a)) ---------------------------------------------
     truth_north = test_column(orbit, 'traditional_ekf', 'truth_north_m')
     truth_east = test_column(orbit, 'traditional_ekf', 'truth_east_m')
-    axes['trajectory'].plot(truth_east, truth_north, color='#0b0b0b', linewidth=2, label='ground truth')
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.plot(truth_east, truth_north, color='#0b0b0b', linewidth=2, label='ground truth')
     for method, color in METHOD_COLORS.items():
-        seconds = test_column(orbit, method, 'time_gpst_s') - test_column(orbit, method, 'time_gpst_s')[0]
-        axes['trajectory'].plot(truth_east + test_column(orbit, method, 'east_error_m'),
-                                truth_north + test_column(orbit, method, 'north_error_m'), color=color,
-                                linewidth=1.2, label=method)
-        for name, column in AXES:
-            axes[name].plot(seconds, test_column(orbit, method, column), color=color, linewidth=1.2, label=method)
-    axes['trajectory'].set(xlabel='East [m]', ylabel='North [m]', aspect='equal',
-                           title=f'2-D trajectory, LEO orbit {orbit} (Fig. 18(a))')
-    for name, _ in AXES:
-        axes[name].set(xlabel='Time [s]', ylabel=f'{name} error [m]', title=f'{name} error (Fig. 18(b))')
-    for ax in axes.values():
-        finish(ax)
-    fig.tight_layout()
-    fig.savefig(folder / f'results_errors_{orbit}.png', dpi=150)
-    plt.close(fig)
+        ax.plot(truth_east + test_column(orbit, method, 'east_error_m'),
+                truth_north + test_column(orbit, method, 'north_error_m'), color=color, linewidth=1.2, label=method)
+    ax.set(xlabel='East [m]', ylabel='North [m]', aspect='equal', title=f'2-D trajectory, LEO orbit {orbit} (Fig. 18(a))')
+    finish(ax)
+    save(fig, f'results_trajectory_{orbit}.png')
 
-    # --- CDF of the errors (cf. paper Fig. 19) ----------------------------------------------
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
-    for ax, (name, column) in zip(axes, AXES):
+    for name, column in AXES:
+        # --- Error over time (cf. paper Fig. 18(b)) ---------------------------------------
+        fig, ax = plt.subplots(figsize=(10, 4.5))
+        for method, color in METHOD_COLORS.items():
+            seconds = test_column(orbit, method, 'time_gpst_s') - test_column(orbit, method, 'time_gpst_s')[0]
+            ax.plot(seconds, test_column(orbit, method, column), color=color, linewidth=1.2, label=method)
+        ax.set(xlabel='Time [s]', ylabel=f'{name} error [m]', title=f'{name} error, LEO orbit {orbit} (Fig. 18(b))')
+        finish(ax)
+        save(fig, f'results_error_{name.lower()}_{orbit}.png')
+
+        # --- CDF of the error (cf. paper Fig. 19) -----------------------------------------
+        fig, ax = plt.subplots(figsize=(7, 5))
         for method, color in METHOD_COLORS.items():
             error = np.sort(np.abs(test_column(orbit, method, column)))
             ax.plot(error, np.arange(1, len(error) + 1) / len(error), color=color, linewidth=2, label=method)
         ax.set(xlabel=f'{name} error [m]', ylabel='Cumulative probability',
                title=f'{name} error CDF, LEO orbit {orbit} (Fig. 19)')
         finish(ax)
-    fig.tight_layout()
-    fig.savefig(folder / f'results_cdf_{orbit}.png', dpi=150)
-    plt.close(fig)
+        save(fig, f'results_cdf_{name.lower()}_{orbit}.png')
 
     # --- Stanford diagrams (cf. paper Fig. 20) -------------------------------------------
-    fig, axes = plt.subplots(2, 2, figsize=(12, 11))
-    for row, method in enumerate(METHOD_COLORS):
+    for method in METHOD_COLORS:
         summary = test[orbit][method]
         north, east, down = (test_column(orbit, method, column) for _, column in AXES)
-        for col, (direction, error, pl_name) in enumerate((('horizontal', np.hypot(north, east), 'horizontal_pl_m'),
-                                                            ('vertical', np.abs(down), 'vertical_pl_m'))):
-            ax, pl = axes[row, col], test_column(orbit, method, pl_name)
+        for direction, error, pl_name in (('horizontal', np.hypot(north, east), 'horizontal_pl_m'),
+                                          ('vertical', np.abs(down), 'vertical_pl_m')):
+            fig, ax = plt.subplots(figsize=(7, 6))
+            pl = test_column(orbit, method, pl_name)
             percent = summary[f'stanford_{direction}_percent']
             for region, (polygon, color, (x, y)) in region_shapes.items():
                 ax.fill(*zip(*polygon), color=color, alpha=0.25, linewidth=0)
@@ -465,9 +466,7 @@ for orbit in orbits:
                    title=f'{method}, LEO orbit {orbit}: {direction} (AL = {al:g} m, Fig. 20)')
             fig.colorbar(points, ax=ax, label='epochs per cell')
             finish(ax, legend=False)
-    fig.tight_layout()
-    fig.savefig(folder / f'results_stanford_{orbit}.png', dpi=150)
-    plt.close(fig)
+            save(fig, f'results_stanford_{method}_{direction}_{orbit}.png')
 
 # --- 3-D error CDF with every LEO filter orbit (A26) -------------------------------------
 fig, ax = plt.subplots(figsize=(8, 5))
@@ -479,7 +478,6 @@ for orbit in orbits:
 ax.set(xscale='log', xlabel='3-D position error [m]', ylabel='Cumulative probability',
        title='3-D error CDF by LEO filter orbit')
 finish(ax)
-fig.tight_layout()
-fig.savefig(folder / 'results_orbits.png', dpi=150)
-plt.close(fig)
-print(f'saved results_training.png, results_orbits.png and results_errors/cdf/stanford_<orbit>.png in {folder}')
+save(fig, 'results_orbits.png')
+print(f'saved results_table.txt (text report) and {len(saved)} figures in {folder}:')
+print('\n'.join(f'  {name}' for name in saved))

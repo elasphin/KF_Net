@@ -2,13 +2,20 @@
 
 The network tested is the model of the best validation loss (train.py, A21).
 
-    python test.py   ->  outputs/test_summary.json, outputs/test_epochs.csv   (plots: show_results.py)
+    python test.py   ->  outputs/test_summary.json, outputs/test_epochs.csv, outputs/test_loss.json
+                         (plots: show_results.py)
     (outputs = settings.OUTPUT_FOLDER: OUTPUT_ROOT/<experiment>/<loss>/lr_<rate>)
 
 The network trained once (LEO_TRAIN_ORBIT) is tested with every LEO filter orbit of
 settings.LEO_TEST_ORBITS on the same measurements and the same R (A26): the true orbit
 (upper bound), the TLE orbit and, later, the neural-network orbit. Both filters use the
 same measurements and the same FDE (Eq. (33)-(34)).
+
+test_loss.json: loss (Eq. (30), as in training) and position RMSE on the testing dataset under the conditions of
+the validation (A21: no dropout, no gradient, no FDE, LEO orbit LEO_TRAIN_ORBIT), so that they compare with the
+training and validation values of training_history.json; for the tested model (best validation loss) and for
+the model after the last epoch. Only the saved models run (no training); show_results.py writes this file if it
+is missing or older than the models.
 """
 import json
 
@@ -19,7 +26,7 @@ import settings as cfg
 from dataset import load_dataset
 from measurements import ecef_to_llh, ecef_to_ned_matrix
 from navigation import MaskedCLANetwork, run_filter, stanford_percentages
-from train import CHECKPOINT_FILE
+from train import CHECKPOINT_FILE, LAST_CHECKPOINT_FILE
 METHODS = ('masked_cla_kalmannet', 'traditional_ekf')
 
 
@@ -38,15 +45,44 @@ def summarize(result):
     }
 
 
-def main():
-    cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
-    checkpoint = torch.load(CHECKPOINT_FILE)
+TEST_LOSS_FILE = cfg.OUTPUT_FOLDER / 'test_loss.json'
+
+
+def load_network(path):
+    """(network, epoch) of a model saved by train.py."""
+    checkpoint = torch.load(path)
     if checkpoint.get('leo_train_orbit') != cfg.LEO_TRAIN_ORBIT:
-        raise ValueError(f"{CHECKPOINT_FILE} was trained with LEO orbit {checkpoint.get('leo_train_orbit')!r}, "
+        raise ValueError(f"{path} was trained with LEO orbit {checkpoint.get('leo_train_orbit')!r}, "
                          f'settings.LEO_TRAIN_ORBIT is {cfg.LEO_TRAIN_ORBIT!r}; run train.py again')
     network = MaskedCLANetwork(checkpoint['max_measurements'])
     network.load_state_dict(checkpoint['state_dict'])
-    print(f"model of epoch {checkpoint.get('epoch')} (best validation loss, A21): {CHECKPOINT_FILE}")
+    return network, checkpoint.get('epoch')
+
+
+def write_test_loss(data=None, orbits=None):
+    """test_loss.json: loss and position RMSE of the tested and of the last model on the testing dataset, run as
+    the validation (A21). Returns its content."""
+    if data is None:
+        data, orbits = load_dataset('test')
+    orbit = cfg.LEO_TRAIN_ORBIT if cfg.LEO_TRAIN_ORBIT in orbits else next(iter(orbits))
+    result = {'conditions': f'as the validation (A21): no dropout, no gradient, no FDE, LEO orbit {orbit}',
+              'leo_orbit': orbit, 'samples': len(data.fusion_times) - 1}
+    for name, path in (('tested_model', CHECKPOINT_FILE), ('last_epoch_model', LAST_CHECKPOINT_FILE)):
+        if not path.exists():
+            continue
+        network, epoch = load_network(path)
+        run = run_filter(data, orbits[orbit], network, fault_detection=False)
+        result[name] = {'epoch': epoch, 'loss': run['loss'], 'position_rmse_m': run['position_rmse_m']}
+        print(f"test, {name} (epoch {epoch}, {result['conditions']}): loss {run['loss']:.4g} | "
+              f"RMSE {run['position_rmse_m']:.3f} m")
+    TEST_LOSS_FILE.write_text(json.dumps(result, indent=1))
+    return result
+
+
+def main():
+    cfg.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+    network, epoch = load_network(CHECKPOINT_FILE)
+    print(f"model of epoch {epoch} (best validation loss, A21): {CHECKPOINT_FILE}")
 
     data, orbits = load_dataset('test')
     range_errors = json.loads((cfg.OUTPUT_FOLDER / 'leo_orbit_error_test.json').read_text())
@@ -74,6 +110,7 @@ def main():
                   f"LEO fault epochs {s['epochs_with_leo_fault']}")
     (cfg.OUTPUT_FOLDER / 'test_summary.json').write_text(json.dumps(summary, indent=2, default=float))
     (cfg.OUTPUT_FOLDER / 'test_epochs.csv').write_text('\n'.join(lines) + '\n')
+    write_test_loss(data, orbits)
 
 
 if __name__ == '__main__':

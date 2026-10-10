@@ -76,9 +76,9 @@ every experiment of that mode. The outputs of a run are in `KF_Net_outputs/<mode
 | `navigation.py` | 15-state INS error model (Eq. (6)-(9)), measurement model, Kalman update; network input Eq. (10)-(17) and the masked CLA network Eq. (21)-(29); the filter of Fig. 2 (network or traditional EKF gain), shared by training and test, with fault detection Eq. (33), identification, DIA Eq. (34) (repeated after each identified fault, A27) and protection levels |
 | `train.py` | Offline training on the training dataset, Eq. (30)-(32), except its last 20 %; validation on that part after every epoch and the model of the best validation loss (A21); resume of an interrupted training: the training state after every epoch |
 | `run_experiments.ipynb` | Colab / Kaggle notebook that runs one experiment branch in one mode and compares |
-| `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20) |
+| `test.py` | Online test: RMSE (Table IV) and Stanford percentages (Fig. 20); test loss and RMSE of the tested and of the last model under the validation conditions (`test_loss.json`) |
 | `check_dataset.py` | Checks of the real dataset reading against the truth (IMR header, truth columns, lever arm, 1-s INS with IMU time offsets, free INS, pseudorange residuals) and the free-INS / EKF GNSS / EKF GNSS+LEO / network baselines on the whole dataset |
-| `show_results.py` | Figures and table as in the paper: training and validation loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, data sizes, learning rate and network size; `python show_results.py compare`: table and figure comparing the test results of every experiment branch run |
+| `show_results.py` | Figures and table as in the paper: training and validation loss and RMSE per epoch, trajectory and north/east/down errors (Fig. 18), error CDFs (Fig. 19), Stanford diagram per method (Fig. 20), Table IV, training / validation / test samples, network architecture (layers, neurons, parameters), preprocessing used or not, loss and RMSE of train, validation and test at the last epoch and for the tested model, learning rate; nothing is trained (a missing `test_loss.json` is written from the saved models); `python show_results.py compare`: table and figure comparing the test results of every experiment branch run |
 
 ## Data
 
@@ -134,10 +134,13 @@ python train.py         # outputs/masked_cla_network.pt (model of the best valid
                         #         masked_cla_network_last.pt (model after the last epoch), training_history.json,
                         #         training_info.json, leo_orbit_error_train.json (orbit error of the training LEO
                         #         orbit, used in R)
-python test.py          # outputs/test_summary.json, test_epochs.csv, leo_orbit_error_test.json (one entry per LEO orbit)
+python test.py          # outputs/test_summary.json, test_epochs.csv, leo_orbit_error_test.json (one entry per LEO orbit),
+                        #         test_loss.json (loss and RMSE of the tested and the last model, as the validation)
 python check_dataset.py # optional: dataset reading checks and baselines (argument test for Data02)
-python show_results.py  # outputs/results_training.png, results_orbits.png, results_table.txt and, per LEO orbit,
-                        #         results_errors_<orbit>.png, results_cdf_<orbit>.png, results_stanford_<orbit>.png
+python show_results.py  # outputs/results_table.txt (the text report, only there) and one chart per file:
+                        #         results_loss.png, results_rmse.png, results_orbits.png and, per LEO orbit,
+                        #         results_trajectory_<orbit>.png, results_error_<axis>_<orbit>.png,
+                        #         results_cdf_<axis>_<orbit>.png, results_stanford_<method>_<direction>_<orbit>.png
 ```
 
 LEO orbit of the filter (docs/ASSUMPTIONS.md A26): the network is trained once with `LEO_TRAIN_ORBIT` (`'reference'`, the

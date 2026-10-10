@@ -140,12 +140,13 @@ FC_HIDDEN_UNITS = 64               # hidden layer of the masked FC in Fig. 8    
 MASK_EPSILON = 1e-6                # epsilon of Eq. (22)                          [paper Eq. (22)]
 
 # --- Training (paper Sec. II-C, Table III, Fig. 15) --------------------------
-# As in the paper: the training dataset trains the network for TRAINING_EPOCHS epochs, no early stopping,
-# gradient clipping or gain scale. Added (A21): its last VALIDATION_FRACTION is kept out of the training; after
+# As in the paper: the training dataset trains the network for at most TRAINING_EPOCHS epochs, no gradient
+# clipping or gain scale. Added (A21): its last VALIDATION_FRACTION is kept out of the training; after
 # every epoch the network runs on it and the model with the lowest validation loss is the one tested (the model
 # after the last epoch is kept as well).
 LEARNING_RATE = 0.01               # Adam, one rate per run (Fig. 15: 0.001 ... 0.02) [paper Table III, Fig. 15]
 TRAINING_EPOCHS = 480              # learning curves of Fig. 15 run to ~480 epochs [paper Fig. 15]
+EARLY_STOPPING_PATIENCE = 20       # epochs without a lower validation loss before the training ends [choice A29]
 L2_WEIGHT = 1e-5                   # gamma of Eq. (32)                            [choice A14]
 BACKPROP_WINDOW = 1                # single-step gradient of Eq. (31): state and LSTM state detached every epoch [paper Eq. (31)]
 # Labels of the loss Eq. (30): 'pva' = position, velocity and attitude of the post-processed truth, velocity and

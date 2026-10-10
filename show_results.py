@@ -305,9 +305,12 @@ def results_lines():
     test_run = test_loss()
     na = float('nan')
 
+    def number(value, form):
+        return '-' if value != value else format(value, form)         # NaN: not available
+
     def row(name, samples, at_last, at_best):
-        return (f"  {name:<12}{samples:>9}  {at_last[0]:>12.4g}{at_last[1]:>12.3f}    "
-                f"{at_best[0]:>12.4g}{at_best[1]:>12.3f}")
+        return (f"  {name:<12}{samples:>9}  {number(at_last[0], '.4g'):>12}{number(at_last[1], '.3f'):>12}    "
+                f"{number(at_best[0], '.4g'):>12}{number(at_best[1], '.3f'):>12}")
 
     def test_values(model):
         values = test_run.get(model, {})

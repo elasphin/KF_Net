@@ -187,8 +187,8 @@ def test_column(orbit, method, name):
 def finish(ax, legend=True):
     ax.grid(color='#e5e5e3', linewidth=0.8)
     ax.spines[['top', 'right']].set_visible(False)
-    if legend:
-        ax.legend(frameon=False)
+    if legend:   # the same place in every figure: outside the axes, right of them, at the top (never over the data)
+        ax.legend(frameon=False, loc='upper left', bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
 
 
 # --- Table (paper Table IV and Fig. 20 numbers, plus the run settings) -------------------
@@ -379,7 +379,7 @@ saved = []
 
 def save(fig, name):
     fig.tight_layout()
-    fig.savefig(folder / name, dpi=150)
+    fig.savefig(folder / name, dpi=150, bbox_inches='tight')     # the legend outside the axes is kept
     plt.close(fig)
     saved.append(name)
 

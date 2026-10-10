@@ -2,16 +2,27 @@
 
     python show_results.py   (after train.py and test.py; outputs = settings.OUTPUT_FOLDER of this run)
 
-    outputs/results_training.png          training and validation loss and position RMSE per epoch (cf. paper
-                                          Fig. 15; validation: A21) and the table
-    outputs/results_errors_<orbit>.png    2-D trajectory and north/east/down errors over time (Fig. 18)
-    outputs/results_cdf_<orbit>.png       CDF of the north/east/down errors (Fig. 19)
-    outputs/results_stanford_<orbit>.png  horizontal and vertical Stanford diagram of each method (Fig. 20)
-    outputs/results_orbits.png            CDF of the 3-D error of each method with every LEO filter orbit (A26)
-    outputs/results_table.txt             the table (also printed)
-<orbit> is each LEO filter orbit of the test (settings.LEO_TEST_ORBITS: reference, tle, network).
+    One chart per file, without the report text (that is only in results_table.txt):
+    outputs/results_loss.png                      training and validation loss per epoch (cf. paper Fig. 15;
+                                                  validation: A21)
+    outputs/results_rmse.png                      training and validation position RMSE per epoch
+    outputs/results_trajectory_<orbit>.png        2-D trajectory (Fig. 18(a))
+    outputs/results_error_<axis>_<orbit>.png      north, east or down error over time (Fig. 18(b))
+    outputs/results_cdf_<axis>_<orbit>.png        CDF of the north, east or down error (Fig. 19)
+    outputs/results_stanford_<method>_<direction>_<orbit>.png
+                                                  horizontal or vertical Stanford diagram of one method (Fig. 20)
+    outputs/results_orbits.png                    CDF of the 3-D error of each method with every LEO filter orbit (A26)
+    outputs/results_table.txt                     the text report (not printed, not in the figures)
+<orbit> is each LEO filter orbit of the test (settings.LEO_TEST_ORBITS: reference, tle, network), <axis> north, east
+or down, <method> masked_cla_kalmannet or traditional_ekf, <direction> horizontal or vertical.
 
-Reads outputs/training_info.json, training_history.json, test_summary.json, test_epochs.csv.
+Table: samples of the training, validation and test; network architecture (layers, neurons, parameters, from
+the tested model masked_cla_network.pt); preprocessing used and not used; loss and position RMSE of train,
+validation and test at the last epoch and for the tested model; the test of every LEO orbit.
+
+Reads outputs/training_info.json, training_history.json, test_summary.json, test_epochs.csv, test_loss.json and
+the saved models. Nothing is trained: if test_loss.json (test.py) is missing or older than the models, the saved
+models run on the testing dataset to write it.
 
     python show_results.py compare   ->  OUTPUT_ROOT/comparison.txt (also printed), OUTPUT_ROOT/comparison.png
 
@@ -25,12 +36,14 @@ per LEO orbit, with the EKF as reference.
 """
 import csv
 import json
+import re
 import sys
 
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from matplotlib.colors import LogNorm
 
 import settings as cfg
@@ -174,8 +187,8 @@ def test_column(orbit, method, name):
 def finish(ax, legend=True):
     ax.grid(color='#e5e5e3', linewidth=0.8)
     ax.spines[['top', 'right']].set_visible(False)
-    if legend:
-        ax.legend(frameon=False)
+    if legend:   # the same place in every figure: outside the axes, right of them, at the top (never over the data)
+        ax.legend(frameon=False, loc='upper left', bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
 
 
 # --- Table (paper Table IV and Fig. 20 numbers, plus the run settings) -------------------
@@ -202,33 +215,154 @@ def test_lines(orbit):
     ]
 
 
+# --- Network architecture, from the tested model (masked_cla_network.pt) --------------------
+def architecture_lines():
+    """Layers, neurons and parameters of the saved network (its weights, so the table is that of the trained model;
+    pooling and dropout are not in the weights: from training_info.json)."""
+    checkpoint = torch.load(folder / 'masked_cla_network.pt')
+    weights, n_max = checkpoint['state_dict'], checkpoint['max_measurements']
+    pool = re.search(r'max-pool (\d+)', info['network'])
+    dropout = re.search(r'dropout ([\d.]+)', info['network'])
+    pool = pool.group(1) if pool else cfg.POOL_KERNEL_SIZE
+    dropout = dropout.group(1) if dropout else cfg.LSTM_DROPOUT
+
+    def parameters(prefix, suffix=''):
+        return sum(w.numel() for name, w in weights.items()
+                   if name.startswith(prefix) and name.endswith(suffix) and 'loss_weight' not in name
+                   and 'gain_row_scale' not in name)
+
+    filters, _, kernel = weights['conv.weight'].shape
+    lstm_layers = sorted(int(name.rsplit('_l', 1)[1]) for name in weights if name.startswith('lstm.weight_ih_l'))
+    units = weights['lstm.weight_hh_l0'].shape[1]
+    fc_units, gain_size = weights['fc_hidden.weight'].shape[0], weights['fc_output.weight'].shape[0]
+    D = info['input_size']
+    layers = [('masked Conv1D (Eq. 22)', f'{filters} filters, kernel {kernel}', f'{filters} x D', 'ReLU',
+               parameters('conv')),
+              ('max-pool (stride 1)', f'size {pool}', f'{filters} x D', '-', 0),
+              *[(f'LSTM layer {i + 1} (Eq. 24-25)', f'{units} units', f'L x {units}', 'tanh, sigmoid',
+                 parameters('lstm.', f'_l{i}')) for i in lstm_layers],
+              ('attention W_h, b_h (Eq. 26)', f'{weights["attention_hidden.weight"].shape[0]}', f'L x {units}', 'tanh',
+               parameters('attention_hidden')),
+              ('attention v (Eq. 26-29)', '1 score per step', f'{units}', 'softmax', parameters('attention_vector')),
+              ('FC hidden', f'{fc_units}', f'{fc_units}', 'ReLU', parameters('fc_hidden')),
+              ('FC output: Kalman gain', f'{gain_size} = 15 x N_max', f'15 x {n_max}', 'linear',
+               parameters('fc_output'))]
+    rows, number = [], 0
+    for name, units_text, output, activation, count in layers:
+        number += count > 0                          # layers with weights are numbered, the max-pool is not
+        rows.append(f"  {number if count else '-':>2}  {name:<28}{units_text:<22}{output:<12}{activation:<15}"
+                    f"{count:>10,}")
+    return [
+        f'NETWORK ARCHITECTURE (tested model; input X_k, D = 36 + 2 N_max = {D}, N_max = {n_max}, '
+        f'L = valid entries of X_k <= D)',
+        f"  {'#':>2}  {'layer':<28}{'neurons / units':<22}{'output':<12}{'activation':<15}{'parameters':>10}",
+        *rows,
+        f'  layers with weights         {number} (Conv1D 1, LSTM {len(lstm_layers)}, attention 2, FC 2), plus max-pool',
+        f'  LSTM dropout                {dropout} between the LSTM layers (training only)',
+        f"  trainable parameters        {info['trainable_parameters']:,}",
+    ]
+
+
+def preprocessing_lines():
+    """What is done to the network input and output and to the labels (A13, A16, A28)."""
+    loss_weights = info.get('loss_weights_p_v_theta', [1.0])
+    scale = info.get('gain_row_scale_p_v_theta_ba_bg')
+    if scale and any(abs(v - 1.0) > 1e-12 for v in scale):
+        scale_text = f"used: K = diag(s) K_net, s p / v / theta / b_a / b_g = {' / '.join(f'{v:.3g}' for v in scale)} (A28)"
+    else:
+        scale_text = 'not used'
+    if len(loss_weights) > 1:
+        weight_text = f"used: p / v / theta = {' / '.join(f'{w:.3g}' for w in loss_weights)} (LOSS = 'pva', A28)"
+    else:
+        weight_text = "not used: position labels only (LOSS = 'p', paper)"
+    return [
+        'PREPROCESSING',
+        '  input normalization         not used: X_k (Eq. (15)-(16)) enters the network as it is (A13)',
+        '  input standardization       not used (A13)',
+        f"  zero padding and mask       used: X_k padded to D = {info['input_size']}, mask M_k (Eq. (17)), "
+        f"at most N_max = {info['max_measurements']} measurements (A16)",
+        f'  gain row scale (output)     {scale_text}',
+        f'  loss weights (labels)       {weight_text}',
+    ]
+
+
+def test_loss():
+    """test_loss.json of test.py; if it is missing or older than the models, it is written here: the saved models
+    run on the testing dataset (no training). {} if that fails (e.g. no dataset here)."""
+    path = folder / 'test_loss.json'
+    models = [p for p in (folder / 'masked_cla_network.pt', folder / 'masked_cla_network_last.pt') if p.exists()]
+    if path.exists() and all(path.stat().st_mtime >= p.stat().st_mtime for p in models):
+        return json.loads(path.read_text())
+    print(f'{path.name} missing or older than the models: the saved models run on the testing dataset '
+          f'(no training)')
+    try:
+        from test import write_test_loss
+        return write_test_loss()
+    except Exception as error:                     # the other results are shown all the same
+        print(f'WARNING: no test loss ({type(error).__name__}: {error}); run python test.py')
+        return {}
+
+
+def results_lines():
+    """Loss and position RMSE of train, validation and test at the last epoch and for the tested model."""
+    by_epoch = {h['epoch']: h for h in history}
+    last, best = history[-1], by_epoch.get(info.get('best_epoch'), {})
+    test_run = test_loss()
+    na = float('nan')
+
+    def number(value, form):
+        return '-' if value != value else format(value, form)         # NaN: not available
+
+    def row(name, samples, at_last, at_best):
+        return (f"  {name:<12}{samples:>9}  {number(at_last[0], '.4g'):>12}{number(at_last[1], '.3f'):>12}    "
+                f"{number(at_best[0], '.4g'):>12}{number(at_best[1], '.3f'):>12}")
+
+    def test_values(model):
+        values = test_run.get(model, {})
+        return values.get('loss', na), values.get('position_rmse_m', na)
+
+    lines = [
+        f"RESULTS: loss (Eq. (30), MSE of the labels {info.get('loss', 'p')}) and position RMSE [m]",
+        f"  {'':<12}{'':>9}  {'last epoch ' + str(last['epoch']):^24}    "
+        f"{'tested model, epoch ' + str(info.get('best_epoch', '-')):^24}",
+        f"  {'':<12}{'samples':>9}  {'loss':>12}{'RMSE [m]':>12}    {'loss':>12}{'RMSE [m]':>12}",
+        row('train', info['training_samples'], (last['train_loss'], last['train_position_rmse_m']),
+            (best.get('train_loss', na), best.get('train_position_rmse_m', na))),
+        row('validation', info.get('validation_samples', '-'),
+            (last.get('validation_loss', na), last.get('validation_position_rmse_m', na)),
+            (best.get('validation_loss', na), best.get('validation_position_rmse_m', na))),
+        row('test', test_run.get('samples', test[orbits[0]]['masked_cla_kalmannet']['epochs']),
+            test_values('last_epoch_model'), test_values('tested_model')),
+        '  train: training pass of the epoch (dropout on); validation and test: no dropout, no gradient, no FDE,',
+        f"  LEO orbit {test_run.get('leo_orbit', info['leo_train_orbit'])} (test: test_loss.json; with FDE and "
+        f"every LEO orbit: TEST below)",
+        f"  traditional EKF validation RMSE {info.get('classical_ekf_validation_position_rmse_m', na):.3f} m",
+    ]
+    if test_run.get('last_epoch_model', {}).get('epoch') not in (None, last['epoch']):
+        lines.append(f"  WARNING: the last model of test_loss.json is of epoch {test_run['last_epoch_model']['epoch']}")
+    return lines
+
+
 lines = [
-    'DATA',
-    f"  training samples (epochs)   {info['training_samples']}",
-    f"  validation (A21)            {info.get('validation_dataset', '-')}, "
-    f"fusion epochs {info.get('validation_fusion_epochs', '-')}",
-    f"  validation samples          {info.get('validation_samples', '-')}",
-    f"  test samples                {test[orbits[0]]['masked_cla_kalmannet']['epochs']}",
+    'DATA (samples = fusion epochs, one per GNSS epoch)',
+    f"  training samples            {info['training_samples']} ({info.get('dataset', '-')}, fusion epochs "
+    f"{info.get('training_fusion_epochs', '-')})",
+    f"  validation samples (A21)    {info.get('validation_samples', '-')} ({info.get('validation_dataset', '-')}, "
+    f"fusion epochs {info.get('validation_fusion_epochs', '-')})",
+    f"  test samples                {test[orbits[0]]['masked_cla_kalmannet']['epochs']} ({cfg.TEST_FOLDER_NAME})",
     f"  LEO orbit, training         {info['leo_train_orbit']}",
     f"  max measurements N_max      {info['max_measurements']}",
-    'NETWORK',
-    f"  input size                  {info['input_size']}",
-    '  layers', *[f'    {layer}' for layer in info['network'].split(' -> ')],
-    f"  trainable parameters        {info['trainable_parameters']:,}",
+    *architecture_lines(),
+    *preprocessing_lines(),
     'TRAINING',
-    f"  loss labels (A28)           {info.get('loss', 'p')}, weights p / v / theta "
-    f"{' / '.join(f'{w:.3g}' for w in info.get('loss_weights_p_v_theta', [1.0]))}",
+    f"  loss labels (A28)           {info.get('loss', 'p')}",
     f"  learning rate               {info['learning_rate']}",
     f"  optimization                {info['optimization']}",
     f"  epochs run / max            {info['epochs_run']} / {info['max_epochs']}",
-    f"  final train loss            {info['final_train_loss']:.4g}",
-    f"  final train RMSE            {info['final_train_position_rmse_m']:.3f} m",
-    f"  final validation RMSE       {info.get('final_validation_position_rmse_m', float('nan')):.3f} m",
-    f"  tested model: epoch         {info.get('best_epoch', '-')} (best validation loss, A21)",
-    f"  its validation RMSE         {info.get('best_validation_position_rmse_m', float('nan')):.3f} m",
-    f"  EKF validation RMSE         {info.get('classical_ekf_validation_position_rmse_m', float('nan')):.3f} m",
+    f"  tested model                epoch {info.get('best_epoch', '-')} (best validation loss, A21)",
     f"  L2 weight                   {info['l2_weight']}",
     f"  training time               {info['training_time_s'] / 3600:.2f} h",
+    *results_lines(),
     'TEST by LEO orbit (A26)   LEO range RMS  3D RMSE network / EKF  LEO fault epochs network / EKF',
     *[f"  {orbit:<24s}{test[orbit]['leo_range_error']['rms_m']:10.1f} m"
       f"{test[orbit]['masked_cla_kalmannet']['rmse_3d_m']:12.2f} / {test[orbit]['traditional_ekf']['rmse_3d_m']:.2f} m"
@@ -237,28 +371,35 @@ lines = [
       for orbit in orbits],
     *[line for orbit in orbits for line in test_lines(orbit)],
 ]
-table = '\n'.join(lines)
-print(table)
-(folder / 'results_table.txt').write_text(table + '\n')
+(folder / 'results_table.txt').write_text('\n'.join(lines) + '\n')     # the text report: only in this file
 
-# --- Training (cf. paper Fig. 15) ------------------------------------------------------
+# ===== Figures: one chart per file, no report text ========================================
+saved = []
+
+
+def save(fig, name):
+    fig.tight_layout()
+    fig.savefig(folder / name, dpi=150, bbox_inches='tight')     # the legend outside the axes is kept
+    plt.close(fig)
+    saved.append(name)
+
+
+# --- Training: loss and position RMSE per epoch (cf. paper Fig. 15) ---------------------
 epochs = [h['epoch'] for h in history]
-fig, axes = plt.subplots(1, 3, figsize=(20, 8), gridspec_kw={'width_ratios': [1, 1, 0.9]})
-for ax, key, label in ((axes[0], 'loss', 'Loss, Eq. (32)'), (axes[1], 'position_rmse_m', 'Position RMSE [m]')):
+for key, label, name in (('loss', 'Loss, Eq. (32)', 'results_loss.png'),
+                         ('position_rmse_m', 'Position RMSE [m]', 'results_rmse.png')):
+    fig, ax = plt.subplots(figsize=(9, 5.5))
     ax.plot(epochs, [h[f'train_{key}'] for h in history], color=TRAIN_COLOR, linewidth=2, label='train')
     if 'validation_loss' in history[0]:
         ax.plot(epochs, [h[f'validation_{key}'] for h in history], color=VALIDATION_COLOR, linewidth=2,
                 label='validation')
         ax.axvline(info['best_epoch'], color=VALIDATION_COLOR, linewidth=1, linestyle='--',
                    label=f"tested model (epoch {info['best_epoch']})")
-    ax.set(xlabel='Epoch', ylabel=label, title=label)
+    ax.set(xlabel='Epoch', ylabel=label, title=f'{label} per epoch')
+    if key == 'loss':
+        ax.set_yscale('log')
     finish(ax)
-axes[0].set_yscale('log')
-axes[2].axis('off')
-axes[2].text(0.0, 1.0, table, family='monospace', fontsize=8, va='top')
-fig.tight_layout()
-fig.savefig(folder / 'results_training.png', dpi=150)
-plt.close(fig)
+    save(fig, name)
 
 # --- Regions of the Stanford diagrams (cf. paper Fig. 20) --------------------------------
 al = cfg.ALERT_LIMIT
@@ -270,50 +411,46 @@ region_shapes = {                                   # (polygon, fill color, labe
     'SU&MI': ([(al, al), (limit, al), (limit, limit)], '#d03b3b', (1.2 * al, 1.08 * al)),
 }
 for orbit in orbits:
-    # --- Trajectory and errors over time (cf. paper Fig. 18) -------------------------------
-    fig, axes = plt.subplot_mosaic([['trajectory', 'North'], ['trajectory', 'East'], ['trajectory', 'Down']],
-                                   figsize=(16, 9))
+    # --- 2-D trajectory (cf. paper Fig. 18(a)) ---------------------------------------------
     truth_north = test_column(orbit, 'traditional_ekf', 'truth_north_m')
     truth_east = test_column(orbit, 'traditional_ekf', 'truth_east_m')
-    axes['trajectory'].plot(truth_east, truth_north, color='#0b0b0b', linewidth=2, label='ground truth')
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.plot(truth_east, truth_north, color='#0b0b0b', linewidth=2, label='ground truth')
     for method, color in METHOD_COLORS.items():
-        seconds = test_column(orbit, method, 'time_gpst_s') - test_column(orbit, method, 'time_gpst_s')[0]
-        axes['trajectory'].plot(truth_east + test_column(orbit, method, 'east_error_m'),
-                                truth_north + test_column(orbit, method, 'north_error_m'), color=color,
-                                linewidth=1.2, label=method)
-        for name, column in AXES:
-            axes[name].plot(seconds, test_column(orbit, method, column), color=color, linewidth=1.2, label=method)
-    axes['trajectory'].set(xlabel='East [m]', ylabel='North [m]', aspect='equal',
-                           title=f'2-D trajectory, LEO orbit {orbit} (Fig. 18(a))')
-    for name, _ in AXES:
-        axes[name].set(xlabel='Time [s]', ylabel=f'{name} error [m]', title=f'{name} error (Fig. 18(b))')
-    for ax in axes.values():
-        finish(ax)
-    fig.tight_layout()
-    fig.savefig(folder / f'results_errors_{orbit}.png', dpi=150)
-    plt.close(fig)
+        ax.plot(truth_east + test_column(orbit, method, 'east_error_m'),
+                truth_north + test_column(orbit, method, 'north_error_m'), color=color, linewidth=1.2, label=method)
+    ax.set(xlabel='East [m]', ylabel='North [m]', aspect='equal', title=f'2-D trajectory, LEO orbit {orbit} (Fig. 18(a))')
+    finish(ax)
+    save(fig, f'results_trajectory_{orbit}.png')
 
-    # --- CDF of the errors (cf. paper Fig. 19) ----------------------------------------------
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
-    for ax, (name, column) in zip(axes, AXES):
+    for name, column in AXES:
+        # --- Error over time (cf. paper Fig. 18(b)) ---------------------------------------
+        fig, ax = plt.subplots(figsize=(10, 4.5))
+        for method, color in METHOD_COLORS.items():
+            seconds = test_column(orbit, method, 'time_gpst_s') - test_column(orbit, method, 'time_gpst_s')[0]
+            ax.plot(seconds, test_column(orbit, method, column), color=color, linewidth=1.2, label=method)
+        ax.set(xlabel='Time [s]', ylabel=f'{name} error [m]', title=f'{name} error, LEO orbit {orbit} (Fig. 18(b))')
+        finish(ax)
+        save(fig, f'results_error_{name.lower()}_{orbit}.png')
+
+        # --- CDF of the error (cf. paper Fig. 19) -----------------------------------------
+        fig, ax = plt.subplots(figsize=(7, 5))
         for method, color in METHOD_COLORS.items():
             error = np.sort(np.abs(test_column(orbit, method, column)))
             ax.plot(error, np.arange(1, len(error) + 1) / len(error), color=color, linewidth=2, label=method)
         ax.set(xlabel=f'{name} error [m]', ylabel='Cumulative probability',
                title=f'{name} error CDF, LEO orbit {orbit} (Fig. 19)')
         finish(ax)
-    fig.tight_layout()
-    fig.savefig(folder / f'results_cdf_{orbit}.png', dpi=150)
-    plt.close(fig)
+        save(fig, f'results_cdf_{name.lower()}_{orbit}.png')
 
     # --- Stanford diagrams (cf. paper Fig. 20) -------------------------------------------
-    fig, axes = plt.subplots(2, 2, figsize=(12, 11))
-    for row, method in enumerate(METHOD_COLORS):
+    for method in METHOD_COLORS:
         summary = test[orbit][method]
         north, east, down = (test_column(orbit, method, column) for _, column in AXES)
-        for col, (direction, error, pl_name) in enumerate((('horizontal', np.hypot(north, east), 'horizontal_pl_m'),
-                                                            ('vertical', np.abs(down), 'vertical_pl_m'))):
-            ax, pl = axes[row, col], test_column(orbit, method, pl_name)
+        for direction, error, pl_name in (('horizontal', np.hypot(north, east), 'horizontal_pl_m'),
+                                          ('vertical', np.abs(down), 'vertical_pl_m')):
+            fig, ax = plt.subplots(figsize=(7, 6))
+            pl = test_column(orbit, method, pl_name)
             percent = summary[f'stanford_{direction}_percent']
             for region, (polygon, color, (x, y)) in region_shapes.items():
                 ax.fill(*zip(*polygon), color=color, alpha=0.25, linewidth=0)
@@ -329,9 +466,7 @@ for orbit in orbits:
                    title=f'{method}, LEO orbit {orbit}: {direction} (AL = {al:g} m, Fig. 20)')
             fig.colorbar(points, ax=ax, label='epochs per cell')
             finish(ax, legend=False)
-    fig.tight_layout()
-    fig.savefig(folder / f'results_stanford_{orbit}.png', dpi=150)
-    plt.close(fig)
+            save(fig, f'results_stanford_{method}_{direction}_{orbit}.png')
 
 # --- 3-D error CDF with every LEO filter orbit (A26) -------------------------------------
 fig, ax = plt.subplots(figsize=(8, 5))
@@ -343,7 +478,6 @@ for orbit in orbits:
 ax.set(xscale='log', xlabel='3-D position error [m]', ylabel='Cumulative probability',
        title='3-D error CDF by LEO filter orbit')
 finish(ax)
-fig.tight_layout()
-fig.savefig(folder / 'results_orbits.png', dpi=150)
-plt.close(fig)
-print(f'saved results_training.png, results_orbits.png and results_errors/cdf/stanford_<orbit>.png in {folder}')
+save(fig, 'results_orbits.png')
+print(f'saved results_table.txt (text report) and {len(saved)} figures in {folder}:')
+print('\n'.join(f'  {name}' for name in saved))

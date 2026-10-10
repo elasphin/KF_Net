@@ -275,10 +275,16 @@ def preprocessing_lines():
         weight_text = f"used: p / v / theta = {' / '.join(f'{w:.3g}' for w in loss_weights)} (LOSS = 'pva', A28)"
     else:
         weight_text = "not used: position labels only (LOSS = 'p', paper)"
+    normalization = info.get('input_normalization')                # set by exp/input-norm-grad-clip only
+    if normalization == 'zscore':
+        normalization_text = 'used: z-score (mean and standard deviation of the training part)'
+    elif normalization == 'l2':
+        normalization_text = 'used: L2 (each feature group to unit norm, as KalmanNet)'
+    else:
+        normalization_text = 'not used: X_k (Eq. (15)-(16)) enters the network as it is (A13)'
     return [
         'PREPROCESSING',
-        '  input normalization         not used: X_k (Eq. (15)-(16)) enters the network as it is (A13)',
-        '  input standardization       not used (A13)',
+        f'  input normalization         {normalization_text}',
         f"  zero padding and mask       used: X_k padded to D = {info['input_size']}, mask M_k (Eq. (17)), "
         f"at most N_max = {info['max_measurements']} measurements (A16)",
         f'  gain row scale (output)     {scale_text}',

@@ -29,12 +29,13 @@ Alternating optimization (paper Sec. II-B, Ref. [15] Algorithm 2): in every
 epoch the filter part theta (LSTM, attention, FC) is updated with the encoder
 psi (masked CNN) frozen, then psi is updated with theta frozen; one Adam step
 each (A15). The training dataset trains the network (paper Sec. III) except its last
-settings.VALIDATION_FRACTION of fusion epochs; there is no early stopping or gain scale of the
+settings.VALIDATION_FRACTION of fusion epochs; there is no gain scale of the
 position rows (A11). Validation (A21, not in the paper): after every epoch the network runs (no dropout,
 no gradient, no fault detection) on that last part of the training dataset, from the truth at
 its first epoch, and the model with the lowest validation loss (Eq. (30), as the training loss)
-is the one tested; all TRAINING_EPOCHS epochs run and the model after the last epoch is kept
-too. The validation run uses no random numbers, so the training itself is the same as without
+is the one tested, and the model after the last epoch is kept too. Early stopping (A29): the training
+ends after EARLY_STOPPING_PATIENCE epochs without a lower validation loss, or after TRAINING_EPOCHS. The
+validation run uses no random numbers, so the training itself is the same as without
 it. The filter uses the LEO orbit settings.LEO_TRAIN_ORBIT (A26; the true orbit by default),
 also on the validation part.
 
@@ -100,9 +101,10 @@ def saved_training_state():
 
 
 def training_finished():
-    """True (with a message) if the saved training already has TRAINING_EPOCHS epochs."""
+    """True (with a message) if the saved training already has TRAINING_EPOCHS epochs or stopped early (A29)."""
     state = saved_training_state()
-    if state is None or state['epoch'] < cfg.TRAINING_EPOCHS:
+    if state is None or (state['epoch'] < cfg.TRAINING_EPOCHS
+                         and state['epoch'] - state['info']['best_epoch'] < cfg.EARLY_STOPPING_PATIENCE):
         return False
     print(f"training already done ({state['epoch']} epochs, {training_state_file()}); python train.py --restart trains again")
     return True
@@ -223,7 +225,8 @@ def main():
         'model_selection': 'lowest validation loss (A21)',
         'loss': cfg.LOSS, 'loss_weights_p_v_theta': network.loss_weight[::3].tolist(),
         'gain_row_scale_p_v_theta_ba_bg': network.gain_row_scale[::3].tolist(),
-        'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS, 'l2_weight': cfg.L2_WEIGHT,
+        'learning_rate': cfg.LEARNING_RATE, 'max_epochs': cfg.TRAINING_EPOCHS,
+        'early_stopping_patience': cfg.EARLY_STOPPING_PATIENCE, 'l2_weight': cfg.L2_WEIGHT,
         'backprop_window': cfg.BACKPROP_WINDOW, 'input_normalization': cfg.INPUT_NORMALIZATION, 'gradient_clip_norm': cfg.GRADIENT_CLIP_NORM, 'optimization': 'alternating: LSTM-attention-FC, then CNN [15]',
         'max_measurements': max_measurements, 'input_size': FIXED_FEATURE_SIZE + 2 * max_measurements,
         'network': f'Conv1D {cfg.CONV_FILTERS}x{cfg.CONV_KERNEL_SIZE} -> max-pool {cfg.POOL_KERNEL_SIZE} -> '
@@ -268,6 +271,9 @@ def main():
         (cfg.OUTPUT_FOLDER / 'training_history.json').write_text(json.dumps(history, indent=1))
         (cfg.OUTPUT_FOLDER / 'training_info.json').write_text(json.dumps(info, indent=1))
         save_training_state(epoch, network, optimizers, history, info)
+        if epoch - info['best_epoch'] >= cfg.EARLY_STOPPING_PATIENCE:   # A29
+            print(f"early stopping: no lower validation loss since epoch {info['best_epoch']}")
+            break
 
 
 if __name__ == '__main__':

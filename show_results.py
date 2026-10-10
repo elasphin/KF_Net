@@ -365,6 +365,7 @@ lines = [
     f"  learning rate               {info['learning_rate']}",
     f"  optimization                {info['optimization']}",
     f"  epochs run / max            {info['epochs_run']} / {info['max_epochs']}",
+    f"  early stopping patience     {info.get('early_stopping_patience', '-')} epochs (A29)",
     f"  tested model                epoch {info.get('best_epoch', '-')} (best validation loss, A21)",
     f"  L2 weight                   {info['l2_weight']}",
     f"  training time               {info['training_time_s'] / 3600:.2f} h",

@@ -16,8 +16,9 @@ tagged `[paper]`, `[ref N]` or `[choice AX]`.
 ## Training experiments (branches `exp/...`)
 
 Each branch is one training setup (`settings.EXPERIMENT`); its outputs go to their own folder (see Run).
-`main` trains as the paper says: Data01 trains the network (no early stopping), single-step gradient of Eq. (31)
-(filter and LSTM state detached every epoch), alternating optimization [15], Adam for 480 epochs (Fig. 15), no
+`main` trains as the paper says: Data01 trains the network, single-step gradient of Eq. (31)
+(filter and LSTM state detached every epoch), alternating optimization [15], Adam for up to 480 epochs (Fig. 15;
+early stopping after 20 epochs without a lower validation loss, A29), no
 gradient clipping and no gain scale of the position rows (A11). Two settings of every run, on every branch:
 - `LOSS`, the labels of the loss Eq. (30): `'pva'` (default, docs/ASSUMPTIONS.md A28) the position, velocity and
   attitude of the truth, velocity and attitude weighted by sigma_p / sigma_v and sigma_p / sigma_theta (RMS errors of
